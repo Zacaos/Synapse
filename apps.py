@@ -50,7 +50,7 @@ if not st.session_state.authenticated:
 
 DF=gerar_dados()
 
-st.sidebar.title('🛡️ Synapse')
+st.sidebar.title('🛡️Synapse Pix Antifraude')
 st.sidebar.write(f"Usuário: {st.session_state.user}")
 st.sidebar.write(f"Perfil: {st.session_state.perfil}")
 menu=st.sidebar.radio('Módulos',[
