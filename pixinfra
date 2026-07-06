@@ -1,0 +1,153 @@
+# --- Provider Configuration ---
+
+provider "google" {
+  project = "synapse-antifraude"
+  region  = "us-central1"
+}
+
+provider "google-beta" {
+  project = "synapse-antifraude"
+  region  = "us-central1"
+}
+
+# --- Networking ---
+
+resource "google_compute_network" "vpc" {
+  name                    = "pix-risk-vpc"
+  auto_create_subnetworks = false
+}
+
+resource "google_compute_subnetwork" "subnet" {
+  name                     = "pix-risk-subnet"
+  ip_cidr_range            = "10.0.0.0/24"
+  region                   = "us-central1"
+  network                  = google_compute_network.vpc.id
+  private_ip_google_access = true
+}
+
+# Reserved IP range for internal Google services (Apigee/Service Networking)
+resource "google_compute_global_address" "apigee_range" {
+  name          = "apigee-range"
+  purpose       = "VPC_PEERING"
+  address_type  = "INTERNAL"
+  prefix_length = 16
+  network       = google_compute_network.vpc.id
+}
+
+resource "google_service_networking_connection" "apigee_peering" {
+  network                 = google_compute_network.vpc.id
+  service                 = "servicenetworking.googleapis.com"
+  reserved_peering_ranges = [google_compute_global_address.apigee_range.name]
+}
+
+# --- Artifact Registry ---
+
+resource "google_artifact_registry_repository" "ml_repo" {
+  location      = "us-central1"
+  repository_id = "pix-risk-models"
+  description   = "Docker repository for PIX risk analytics models"
+  format        = "DOCKER"
+}
+
+# --- BigQuery ---
+
+resource "google_bigquery_dataset" "risk_data" {
+  dataset_id                  = "pix_risk_analytics"
+  friendly_name               = "PIX Risk Data"
+  description                 = "Dataset for PIX risk scores and transaction history"
+  location                    = "US"
+  delete_contents_on_destroy = true
+}
+
+# --- Vertex AI ---
+
+resource "google_vertex_ai_dataset" "pix_risk_dataset" {
+  display_name        = "pix-risk-training-data"
+  metadata_schema_uri = "gs://google-cloud-aiplatform/schema/dataset/metadata/tabular_1.0.0.yaml"
+  region              = "us-central1"
+}
+
+resource "google_vertex_ai_endpoint" "pix_risk_endpoint" {
+  name         = "pix-risk-endpoint"
+  display_name = "PIX Risk Prediction Endpoint"
+  location     = "us-central1"
+}
+
+# --- Cloud Composer (Orchestration) ---
+
+resource "google_composer_environment" "ml_orchestrator" {
+  name   = "pix-risk-orchestrator"
+  region = "us-central1"
+
+  config {
+    software_config {
+      image_version = "composer-2-airflow-2"
+    }
+    node_config {
+      network    = google_compute_network.vpc.id
+      subnetwork = google_compute_subnetwork.subnet.id
+    }
+  }
+}
+
+# --- Dataproc (Feature Engineering) ---
+
+resource "google_dataproc_cluster" "feature_eng_cluster" {
+  name   = "pix-risk-feature-eng"
+  region = "us-central1"
+
+  cluster_config {
+    staging_bucket = google_storage_bucket.dataproc_staging.name
+    
+    gce_cluster_config {
+      network          = google_compute_network.vpc.id
+      subnetwork       = google_compute_subnetwork.subnet.id
+      internal_ip_only = true
+    }
+
+    master_config {
+      num_instances = 1
+      machine_type  = "n1-standard-4"
+      disk_config {
+        boot_disk_size_gb = 100
+      }
+    }
+
+    worker_config {
+      num_instances = 2
+      machine_type  = "n1-standard-4"
+      disk_config {
+        boot_disk_size_gb = 100
+      }
+    }
+  }
+}
+
+resource "google_storage_bucket" "dataproc_staging" {
+  name                        = "pix-risk-staging-${random_id.bucket_suffix.hex}"
+  location                    = "us-central1"
+  uniform_bucket_level_access = true
+  force_destroy               = true
+}
+
+resource "random_id" "bucket_suffix" {
+  byte_length = 4
+}
+
+# --- Apigee (API Authentication & Gateway) ---
+
+resource "google_apigee_organization" "apigee_org" {
+  provider           = google-beta
+  project_id         = "synapse-antifraude"
+  analytics_region   = "us-central1"
+  authorized_network = google_compute_network.vpc.id
+  depends_on         = [google_service_networking_connection.apigee_peering]
+}
+
+resource "google_apigee_instance" "apigee_runtime" {
+  provider = google-beta
+  name     = "pix-risk-runtime"
+  location = "us-central1"
+  org_id   = google_apigee_organization.apigee_org.id
+  ip_range = "10.1.0.0/22"
+}
