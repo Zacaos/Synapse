@@ -107,10 +107,72 @@ elif menu=='Consulta Contas':
         t4.write('Indicadores comportamentais')
 
 elif menu=='Validação de Scores':
-    st.title('Validação de Scores')
-    pesos=pd.DataFrame({'Feature':['DICT','Behavior','Velocity','Device','GeoRisk'],'Peso':[30,25,20,15,10]})
-    st.dataframe(pesos,use_container_width=True)
-    st.bar_chart(pesos.set_index('Feature'))
+
+# --------------------------------------------------
+# PROCESSAMENTO DA BASE DE SCORES
+# --------------------------------------------------
+
+    st.title(
+        "📦 Cálculo do Score em lote"
+    )
+
+    arquivo = st.file_uploader(
+        "Upload CSV",
+        type=["csv"]
+    )
+
+    if arquivo:
+
+        massa = pd.read_csv(
+            arquivo
+        )
+
+        st.write(
+            "Prévia da Massa"
+        )
+
+        st.dataframe(
+            massa.head()
+        )
+
+        if st.button(
+            "Processar Massa"
+        ):
+
+            massa["score"] = np.random.randint(
+                1,
+                99,
+                len(massa)
+            )
+
+            massa["decision"] = massa[
+                "score"
+            ].apply(
+                decision
+            )
+
+            st.success(
+                "Processamento concluído"
+            )
+
+            st.dataframe(
+                massa.head(100),
+                use_container_width=True
+            )
+
+            csv = massa.to_csv(
+                index=False
+            )
+
+            st.download_button(
+                "Download Resultado",
+                csv,
+                "pix_scores.csv"
+            )
+
+
+
+
 
 elif menu=='Behavior Analytics':
     st.title('Behavior Analytics')
