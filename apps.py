@@ -31,6 +31,16 @@ def gerar_dados():
     return df
 
 
+def decision(score):
+    """Classifica o risco baseado no score"""
+    if score >= 80:
+        return 'Alto Risco'
+    elif score >= 50:
+        return 'Médio Risco'
+    else:
+        return 'Baixo Risco'
+
+
 def login():
     st.title('🔐 Synapse Platform')
     u=st.text_input('Usuário')
@@ -169,7 +179,6 @@ elif menu=='Validação de Scores':
                 csv,
                 "pix_scores.csv"
             )
-
 
 
 
