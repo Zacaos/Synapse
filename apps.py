@@ -22,6 +22,9 @@ def gerar_dados():
       'timestamp':[datetime.now()-timedelta(hours=random.randint(0,720)) for _ in range(n)],
       'pix_key':[f'cliente{i}@mail.com' for i in range(n)],
       'cpf':[str(10000000000+i) for i in range(n)],
+      'documento':[f'RG{10000000+i}' for i in range(n)],
+      'telefone':[f'11{90000000+i}' for i in range(n)],
+      'email':[f'usuario{i}@email.com' for i in range(n)],
       'amount':np.round(np.random.lognormal(6.5,1.1,n),2),
       'score':np.random.randint(1,100,n),
       'lat':np.random.uniform(-33,5,n),
@@ -42,27 +45,32 @@ def decision(score):
         return 'Baixo Risco'
 
 
-def analisar_comportamento_cpf(cpf_query, df):
-    """Analisa o comportamento de um CPF específico"""
-    cpf_data = df[df['cpf'] == cpf_query]
+def buscar_por_campo(query, campo, df):
+    """Busca genérica por qualquer campo"""
+    resultado = df[df[campo].astype(str) == str(query)]
+    return resultado if len(resultado) > 0 else None
+
+
+def analisar_comportamento(dados_query, df, tipo_busca):
+    """Analisa o comportamento baseado em qualquer tipo de busca"""
     
-    if len(cpf_data) == 0:
+    if dados_query is None or len(dados_query) == 0:
         return None
     
     # Análises gerais
-    num_transacoes = len(cpf_data)
-    valor_total = cpf_data['amount'].sum()
-    valor_medio = cpf_data['amount'].mean()
-    valor_max = cpf_data['amount'].max()
-    valor_min = cpf_data['amount'].min()
+    num_transacoes = len(dados_query)
+    valor_total = dados_query['amount'].sum()
+    valor_medio = dados_query['amount'].mean()
+    valor_max = dados_query['amount'].max()
+    valor_min = dados_query['amount'].min()
     
     # Análise de destinos
-    destinos = cpf_data['destination'].value_counts()
-    pct_apostas = (len(cpf_data[cpf_data['destination'] == 'Casa de Apostas']) / num_transacoes * 100) if num_transacoes > 0 else 0
-    pct_ecommerce = (len(cpf_data[cpf_data['destination'] == 'E-commerce']) / num_transacoes * 100) if num_transacoes > 0 else 0
+    destinos = dados_query['destination'].value_counts()
+    pct_apostas = (len(dados_query[dados_query['destination'] == 'Casa de Apostas']) / num_transacoes * 100) if num_transacoes > 0 else 0
+    pct_ecommerce = (len(dados_query[dados_query['destination'] == 'E-commerce']) / num_transacoes * 100) if num_transacoes > 0 else 0
     
     # Análise de localização (Impossible Travel)
-    locs = cpf_data[['lat', 'lon', 'timestamp']].sort_values('timestamp')
+    locs = dados_query[['lat', 'lon', 'timestamp']].sort_values('timestamp')
     impossible_travel = False
     travel_warning = ""
     
@@ -80,7 +88,7 @@ def analisar_comportamento_cpf(cpf_query, df):
                 travel_warning = f"⚠️ Viagem impossível detectada: {distance:.0f}km em {time_diff:.1f}horas"
     
     # Score médio e risco
-    score_medio = cpf_data['score'].mean()
+    score_medio = dados_query['score'].mean()
     risco = decision(score_medio)
     
     return {
@@ -96,7 +104,8 @@ def analisar_comportamento_cpf(cpf_query, df):
         'risco': risco,
         'impossible_travel': impossible_travel,
         'travel_warning': travel_warning,
-        'dados_detalhados': cpf_data
+        'dados_detalhados': dados_query,
+        'tipo_busca': tipo_busca
     }
 
 
@@ -258,7 +267,7 @@ elif menu=='Validação de Scores':
 elif menu=='Behavior Analytics':
     st.title('🔍 Behavior Analytics')
     
-    tab1, tab2 = st.tabs(['Análise Global', 'Consulta Individual por CPF'])
+    tab1, tab2 = st.tabs(['Análise Global', 'Consulta Individual'])
     
     with tab1:
         a,b,c=st.columns(3)
@@ -270,91 +279,165 @@ elif menu=='Behavior Analytics':
     with tab2:
         st.subheader('📋 Análise Comportamental Individual')
         
-        cpf_input = st.text_input('Digite o CPF para análise', placeholder='Ex: 10000000000')
+        # Seleção do tipo de busca
+        tipo_busca = st.radio(
+            '🔍 Selecione o tipo de busca:',
+            ['CPF', 'Chave Pix', 'Documento', 'Telefone', 'E-mail', 'Aleatória', 'E2E (Todas as informações)'],
+            horizontal=True
+        )
         
-        if cpf_input:
-            resultado = analisar_comportamento_cpf(cpf_input, DF)
+        resultado = None
+        
+        if tipo_busca == 'CPF':
+            cpf_input = st.text_input('Digite o CPF', placeholder='Ex: 10000000000')
+            if cpf_input:
+                resultado = analisar_comportamento(buscar_por_campo(cpf_input, 'cpf', DF), DF, 'CPF')
+        
+        elif tipo_busca == 'Chave Pix':
+            pix_input = st.text_input('Digite a Chave Pix', placeholder='Ex: cliente0@mail.com')
+            if pix_input:
+                resultado = analisar_comportamento(buscar_por_campo(pix_input, 'pix_key', DF), DF, 'Chave Pix')
+        
+        elif tipo_busca == 'Documento':
+            doc_input = st.text_input('Digite o Documento (RG)', placeholder='Ex: RG10000000')
+            if doc_input:
+                resultado = analisar_comportamento(buscar_por_campo(doc_input, 'documento', DF), DF, 'Documento')
+        
+        elif tipo_busca == 'Telefone':
+            tel_input = st.text_input('Digite o Telefone', placeholder='Ex: 11900000000')
+            if tel_input:
+                resultado = analisar_comportamento(buscar_por_campo(tel_input, 'telefone', DF), DF, 'Telefone')
+        
+        elif tipo_busca == 'E-mail':
+            email_input = st.text_input('Digite o E-mail', placeholder='Ex: usuario0@email.com')
+            if email_input:
+                resultado = analisar_comportamento(buscar_por_campo(email_input, 'email', DF), DF, 'E-mail')
+        
+        elif tipo_busca == 'Aleatória':
+            if st.button('🎲 Gerar Consulta Aleatória'):
+                indice_aleatorio = np.random.randint(0, len(DF))
+                registro_aleatorio = DF.iloc[indice_aleatorio]
+                cpf_aleatorio = registro_aleatorio['cpf']
+                resultado = analisar_comportamento(buscar_por_campo(cpf_aleatorio, 'cpf', DF), DF, 'CPF (Aleatória)')
+                st.info(f"📊 CPF selecionado aleatoriamente: **{cpf_aleatorio}**")
+        
+        elif tipo_busca == 'E2E (Todas as informações)':
+            st.info('🔗 **Busca End-to-End**: Insira qualquer informação do cliente e o sistema buscará em todos os campos')
+            e2e_input = st.text_input('Digite qualquer identificador (CPF, Chave Pix, Email, Telefone, etc)', placeholder='Ex: usuario0@email.com')
+            if e2e_input:
+                # Busca em múltiplos campos
+                resultado_cpf = buscar_por_campo(e2e_input, 'cpf', DF)
+                resultado_pix = buscar_por_campo(e2e_input, 'pix_key', DF) if resultado_cpf is None else None
+                resultado_doc = buscar_por_campo(e2e_input, 'documento', DF) if resultado_pix is None else None
+                resultado_tel = buscar_por_campo(e2e_input, 'telefone', DF) if resultado_doc is None else None
+                resultado_email = buscar_por_campo(e2e_input, 'email', DF) if resultado_tel is None else None
+                
+                resultado_final = resultado_cpf if resultado_cpf is not None else (
+                    resultado_pix if resultado_pix is not None else (
+                        resultado_doc if resultado_doc is not None else (
+                            resultado_tel if resultado_tel is not None else resultado_email
+                        )
+                    )
+                )
+                
+                if resultado_final is not None:
+                    tipo_encontrado = 'CPF' if resultado_cpf is not None else (
+                        'Chave Pix' if resultado_pix is not None else (
+                            'Documento' if resultado_doc is not None else (
+                                'Telefone' if resultado_tel is not None else 'E-mail'
+                            )
+                        )
+                    )
+                    resultado = analisar_comportamento(resultado_final, DF, f'{tipo_encontrado} (E2E)')
+                else:
+                    st.warning(f'❌ Nenhuma correspondência encontrada para: {e2e_input}')
+        
+        # Exibição de resultados
+        if resultado is not None and resultado is not None:
+            st.success(f'✅ Encontrado por: {resultado["tipo_busca"]}')
             
-            if resultado is None:
-                st.warning('❌ CPF não encontrado na base de dados')
+            # Indicador de risco
+            if resultado['risco'] == 'Alto Risco':
+                st.error(f"⚠️ **RISCO ALTO** - Score Médio: {resultado['score_medio']:.1f}")
+            elif resultado['risco'] == 'Médio Risco':
+                st.warning(f"⚠️ **RISCO MÉDIO** - Score Médio: {resultado['score_medio']:.1f}")
             else:
-                # Indicador de risco
-                if resultado['risco'] == 'Alto Risco':
-                    st.error(f"⚠️ **RISCO ALTO** - Score Médio: {resultado['score_medio']:.1f}")
-                elif resultado['risco'] == 'Médio Risco':
-                    st.warning(f"⚠️ **RISCO MÉDIO** - Score Médio: {resultado['score_medio']:.1f}")
-                else:
-                    st.success(f"✅ **RISCO BAIXO** - Score Médio: {resultado['score_medio']:.1f}")
-                
-                st.divider()
-                
-                # Métricas principais
-                col1, col2, col3, col4 = st.columns(4)
-                col1.metric('📊 Transações', resultado['num_transacoes'])
-                col2.metric('💰 Valor Total', f"R$ {resultado['valor_total']:,.2f}")
-                col3.metric('📈 Valor Médio', f"R$ {resultado['valor_medio']:,.2f}")
-                col4.metric('🔝 Valor Máximo', f"R$ {resultado['valor_max']:,.2f}")
-                
-                st.divider()
-                
-                # Análise de destinos
-                st.subheader('🎯 Análise de Destinos')
-                col_dest1, col_dest2, col_dest3 = st.columns(3)
-                col_dest1.metric('🏬 E-commerce', f"{resultado['pct_ecommerce']:.1f}%")
-                col_dest2.metric('🎰 Casa de Apostas', f"{resultado['pct_apostas']:.1f}%", 
-                               delta=None if resultado['pct_apostas'] == 0 else f"⚠️ Alto Risco" if resultado['pct_apostas'] > 20 else None)
-                col_dest3.metric('👤 Pessoa Física', f"{(100-resultado['pct_ecommerce']-resultado['pct_apostas']):.1f}%")
-                
-                # Gráfico de destinos
-                if len(resultado['destinos']) > 0:
-                    chart_data = resultado['destinos'].reset_index()
-                    chart_data.columns = ['Destino', 'Quantidade']
-                    st.bar_chart(chart_data.set_index('Destino'))
-                
-                st.divider()
-                
-                # Análise de Impossible Travel
-                st.subheader('✈️ Análise de Impossible Travel')
-                if resultado['impossible_travel']:
-                    st.error(resultado['travel_warning'])
-                    st.info('Comportamento suspeito detectado: transações em locais geograficamente distantes em um curto período de tempo.')
-                else:
-                    st.success('✅ Nenhuma atividade de viagem impossível detectada')
-                
-                st.divider()
-                
-                # Análise de comportamento e sentido
-                st.subheader('🧠 Análise de Comportamento')
-                
-                comportamento_text = ""
-                bandeiras_vermelhas = []
-                
-                if resultado['pct_apostas'] > 20:
-                    bandeiras_vermelhas.append(f"⚠️ Alto percentual de transações para casas de apostas ({resultado['pct_apostas']:.1f}%)")
-                
-                if resultado['pct_ecommerce'] > 70 and resultado['valor_medio'] < 100:
-                    comportamento_text += "✅ Comportamento consistente: compras frequentes e pequenas em e-commerce\n"
-                elif resultado['pct_ecommerce'] > 70 and resultado['valor_medio'] > 500:
-                    bandeiras_vermelhas.append("⚠️ Grandes compras em e-commerce podem indicar compras fraudulentas")
-                
-                if resultado['valor_max'] > resultado['valor_medio'] * 10:
-                    bandeiras_vermelhas.append(f"⚠️ Transação anormalmente alta: R$ {resultado['valor_max']:,.2f} vs média R$ {resultado['valor_medio']:,.2f}")
-                
-                if bandeiras_vermelhas:
-                    st.warning("🚩 **Bandeiras Vermelhas Detectadas:**")
-                    for bandeira in bandeiras_vermelhas:
-                        st.write(bandeira)
-                else:
-                    st.success("✅ Nenhuma bandeira vermelha detectada no padrão comportamental")
-                
-                if comportamento_text:
-                    st.info(comportamento_text)
-                
-                st.divider()
-                
-                # Tabela detalhada
-                st.subheader('📑 Histórico de Transações')
-                st.dataframe(resultado['dados_detalhados'].sort_values('timestamp', ascending=False), use_container_width=True)
+                st.success(f"✅ **RISCO BAIXO** - Score Médio: {resultado['score_medio']:.1f}")
+            
+            st.divider()
+            
+            # Métricas principais
+            col1, col2, col3, col4 = st.columns(4)
+            col1.metric('📊 Transações', resultado['num_transacoes'])
+            col2.metric('💰 Valor Total', f"R$ {resultado['valor_total']:,.2f}")
+            col3.metric('📈 Valor Médio', f"R$ {resultado['valor_medio']:,.2f}")
+            col4.metric('🔝 Valor Máximo', f"R$ {resultado['valor_max']:,.2f}")
+            
+            st.divider()
+            
+            # Análise de destinos
+            st.subheader('🎯 Análise de Destinos')
+            col_dest1, col_dest2, col_dest3 = st.columns(3)
+            col_dest1.metric('🏬 E-commerce', f"{resultado['pct_ecommerce']:.1f}%")
+            col_dest2.metric('🎰 Casa de Apostas', f"{resultado['pct_apostas']:.1f}%", 
+                           delta=None if resultado['pct_apostas'] == 0 else f"⚠️ Alto Risco" if resultado['pct_apostas'] > 20 else None)
+            col_dest3.metric('👤 Pessoa Física', f"{(100-resultado['pct_ecommerce']-resultado['pct_apostas']):.1f}%")
+            
+            # Gráfico de destinos
+            if len(resultado['destinos']) > 0:
+                chart_data = resultado['destinos'].reset_index()
+                chart_data.columns = ['Destino', 'Quantidade']
+                st.bar_chart(chart_data.set_index('Destino'))
+            
+            st.divider()
+            
+            # Análise de Impossible Travel
+            st.subheader('✈️ Análise de Impossible Travel')
+            if resultado['impossible_travel']:
+                st.error(resultado['travel_warning'])
+                st.info('Comportamento suspeito detectado: transações em locais geograficamente distantes em um curto período de tempo.')
+            else:
+                st.success('✅ Nenhuma atividade de viagem impossível detectada')
+            
+            st.divider()
+            
+            # Análise de comportamento e sentido
+            st.subheader('🧠 Análise de Comportamento')
+            
+            comportamento_text = ""
+            bandeiras_vermelhas = []
+            
+            if resultado['pct_apostas'] > 20:
+                bandeiras_vermelhas.append(f"⚠️ Alto percentual de transações para casas de apostas ({resultado['pct_apostas']:.1f}%)")
+            
+            if resultado['pct_ecommerce'] > 70 and resultado['valor_medio'] < 100:
+                comportamento_text += "✅ Comportamento consistente: compras frequentes e pequenas em e-commerce\n"
+            elif resultado['pct_ecommerce'] > 70 and resultado['valor_medio'] > 500:
+                bandeiras_vermelhas.append("⚠️ Grandes compras em e-commerce podem indicar compras fraudulentas")
+            
+            if resultado['valor_max'] > resultado['valor_medio'] * 10:
+                bandeiras_vermelhas.append(f"⚠️ Transação anormalmente alta: R$ {resultado['valor_max']:,.2f} vs média R$ {resultado['valor_medio']:,.2f}")
+            
+            if bandeiras_vermelhas:
+                st.warning("🚩 **Bandeiras Vermelhas Detectadas:**")
+                for bandeira in bandeiras_vermelhas:
+                    st.write(bandeira)
+            else:
+                st.success("✅ Nenhuma bandeira vermelha detectada no padrão comportamental")
+            
+            if comportamento_text:
+                st.info(comportamento_text)
+            
+            st.divider()
+            
+            # Tabela detalhada
+            st.subheader('📑 Histórico de Transações')
+            st.dataframe(resultado['dados_detalhados'].sort_values('timestamp', ascending=False), use_container_width=True)
+        
+        elif resultado is None and tipo_busca != 'Aleatória' and tipo_busca != 'E2E (Todas as informações)':
+            pass
+        elif tipo_busca not in ['Aleatória', 'E2E (Todas as informações)']:
+            st.warning('❌ Nenhum resultado encontrado. Verifique o identificador e tente novamente.')
 
 elif menu=='Transações Monitoradas':
     st.title('Transações Monitoradas')
