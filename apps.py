@@ -11,12 +11,33 @@ st.set_page_config(page_title='Synapse Platform', page_icon='🛡️', layout='w
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
 
+# Coordenadas das regiões do Brasil
+REGIOES_BRASIL = {
+    'Sudeste': {'lat': -23.5, 'lon': -46.6, 'bounds': [(-28, -52), (-19, -41)]},
+    'Nordeste': {'lat': -5.5, 'lon': -39.0, 'bounds': [(-1, -35), (-18, -48)]},
+    'Norte': {'lat': -3.1, 'lon': -60.0, 'bounds': [(2, -49), (-17, -74)]},
+    'Centro-Oeste': {'lat': -15.8, 'lon': -56.0, 'bounds': [(-7, -49), (-23, -62)]},
+    'Sul': {'lat': -28.5, 'lon': -51.5, 'bounds': [(-22, -49), (-34, -56)]}
+}
+
 @st.cache_data
 def gerar_dados():
     random.seed(42)
     np.random.seed(42)
     n=3000
     cats=['Conta OK','Mule Account','Application Fraud','Scammer Account']
+    
+    # Distribuir pontos sobre as regiões do Brasil
+    lats = []
+    lons = []
+    for i in range(n):
+        regiao = np.random.choice(list(REGIOES_BRASIL.keys()), p=[0.35, 0.30, 0.15, 0.12, 0.08])
+        bounds = REGIOES_BRASIL[regiao]['bounds']
+        lat = np.random.uniform(bounds[1][0], bounds[0][0])
+        lon = np.random.uniform(bounds[0][1], bounds[1][1])
+        lats.append(lat)
+        lons.append(lon)
+    
     df=pd.DataFrame({
       'transaction_id':[f'PIX{i}' for i in range(n)],
       'timestamp':[datetime.now()-timedelta(hours=random.randint(0,720)) for _ in range(n)],
@@ -27,8 +48,8 @@ def gerar_dados():
       'email':[f'usuario{i}@email.com' for i in range(n)],
       'amount':np.round(np.random.lognormal(6.5,1.1,n),2),
       'score':np.random.randint(1,100,n),
-      'lat':np.random.uniform(-33,5,n),
-      'lon':np.random.uniform(-73,-34,n),
+      'lat':lats,
+      'lon':lons,
       'destination':np.random.choice(['E-commerce','Pessoa Física','Casa de Apostas','Serviços'],n,p=[0.5,0.3,0.15,0.05])
     })
     df['categoria']=np.random.choice(cats,n,p=[0.9,0.04,0.03,0.03])
@@ -43,6 +64,42 @@ def decision(score):
         return 'Médio Risco'
     else:
         return 'Baixo Risco'
+
+
+def obter_regiao(lat, lon):
+    """Determina a região baseada em coordenadas"""
+    for regiao, info in REGIOES_BRASIL.items():
+        bounds = info['bounds']
+        if bounds[1][0] <= lat <= bounds[0][0] and bounds[0][1] <= lon <= bounds[1][1]:
+            return regiao
+    return 'Fora do Brasil'
+
+
+def analisar_por_regiao(df):
+    """Analisa riscos por região"""
+    df['regiao'] = df.apply(lambda row: obter_regiao(row['lat'], row['lon']), axis=1)
+    
+    analise_regoes = {}
+    for regiao in REGIOES_BRASIL.keys():
+        df_regiao = df[df['regiao'] == regiao]
+        if len(df_regiao) > 0:
+            score_medio = df_regiao['score'].mean()
+            num_transacoes = len(df_regiao)
+            valor_total = df_regiao['amount'].sum()
+            pct_apostas = (len(df_regiao[df_regiao['destination'] == 'Casa de Apostas']) / num_transacoes * 100)
+            pct_fraude = (len(df_regiao[df_regiao['categoria'] != 'Conta OK']) / num_transacoes * 100)
+            
+            analise_regoes[regiao] = {
+                'score_medio': score_medio,
+                'num_transacoes': num_transacoes,
+                'valor_total': valor_total,
+                'pct_apostas': pct_apostas,
+                'pct_fraude': pct_fraude,
+                'lat': REGIOES_BRASIL[regiao]['lat'],
+                'lon': REGIOES_BRASIL[regiao]['lon']
+            }
+    
+    return analise_regoes
 
 
 def buscar_por_campo(query, campo, df):
@@ -91,6 +148,9 @@ def analisar_comportamento(dados_query, df, tipo_busca):
     score_medio = dados_query['score'].mean()
     risco = decision(score_medio)
     
+    # Detectar região
+    regiao = obter_regiao(dados_query['lat'].mean(), dados_query['lon'].mean())
+    
     return {
         'num_transacoes': num_transacoes,
         'valor_total': valor_total,
@@ -105,7 +165,8 @@ def analisar_comportamento(dados_query, df, tipo_busca):
         'impossible_travel': impossible_travel,
         'travel_warning': travel_warning,
         'dados_detalhados': dados_query,
-        'tipo_busca': tipo_busca
+        'tipo_busca': tipo_busca,
+        'regiao': regiao
     }
 
 
@@ -265,16 +326,94 @@ elif menu=='Validação de Scores':
 
 
 elif menu=='Behavior Analytics':
-    st.title('🔍 Behavior Analytics')
+    st.title('🔍 Behavior Analytics - Brasil')
     
-    tab1, tab2 = st.tabs(['Análise Global', 'Consulta Individual'])
+    tab1, tab2 = st.tabs(['Análise Regional', 'Consulta Individual'])
     
     with tab1:
-        a,b,c=st.columns(3)
-        a.metric('Clusters',120)
-        b.metric('Anomalias',82)
-        c.metric('MED',19)
-        st.map(DF[['lat','lon']].head(1000),latitude='lat',longitude='lon')
+        st.subheader('🗺️ Mapa de Riscos por Região')
+        
+        # Análise por região
+        analise_regoes = analisar_por_regiao(DF)
+        
+        # Criar visualização do risco por região
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Mapa com pontos de risco
+            mapa_data = DF.copy()
+            # Colorir por risco
+            mapa_data['color'] = mapa_data['score'].apply(
+                lambda x: '🔴 Alto Risco' if x >= 80 else ('🟡 Médio Risco' if x >= 50 else '🟢 Baixo Risco')
+            )
+            st.map(mapa_data[['lat','lon']].head(1000), latitude='lat', longitude='lon', zoom=3)
+        
+        with col2:
+            st.subheader('📊 Indicadores por Região')
+            
+            # Criando cards para cada região
+            for regiao, dados in sorted(analise_regoes.items(), key=lambda x: x[1]['score_medio'], reverse=True):
+                risco_texto = decision(dados['score_medio'])
+                if risco_texto == 'Alto Risco':
+                    st.error(f"🔴 **{regiao.upper()}** - {risco_texto}")
+                elif risco_texto == 'Médio Risco':
+                    st.warning(f"🟡 **{regiao.upper()}** - {risco_texto}")
+                else:
+                    st.success(f"🟢 **{regiao.upper()}** - {risco_texto}")
+                
+                col_a, col_b, col_c, col_d = st.columns(4)
+                col_a.metric('Score Médio', f"{dados['score_medio']:.1f}")
+                col_b.metric('Transações', dados['num_transacoes'])
+                col_c.metric('Apostas', f"{dados['pct_apostas']:.1f}%")
+                col_d.metric('Fraude', f"{dados['pct_fraude']:.1f}%")
+                st.divider()
+        
+        st.subheader('🚩 Insights e Red Flags por Região')
+        
+        # Insights para Sudeste e Nordeste
+        col_sudeste, col_nordeste = st.columns(2)
+        
+        with col_sudeste:
+            if 'Sudeste' in analise_regoes:
+                dados_sudeste = analise_regoes['Sudeste']
+                st.subheader('🔴 Sudeste (Maior Risco)')
+                
+                red_flags = []
+                if dados_sudeste['score_medio'] > 70:
+                    red_flags.append(f"⚠️ Score muito elevado: {dados_sudeste['score_medio']:.1f}")
+                if dados_sudeste['pct_apostas'] > 25:
+                    red_flags.append(f"⚠️ Alto uso de casas de apostas: {dados_sudeste['pct_apostas']:.1f}%")
+                if dados_sudeste['pct_fraude'] > 15:
+                    red_flags.append(f"⚠️ Taxa de fraude acima do normal: {dados_sudeste['pct_fraude']:.1f}%")
+                
+                if red_flags:
+                    for flag in red_flags:
+                        st.write(flag)
+                else:
+                    st.success("✅ Nenhuma bandeira vermelha detectada")
+                
+                st.info(f"💡 **Insight**: A região Sudeste concentra o maior volume de transações ({dados_sudeste['num_transacoes']}) com score médio de {dados_sudeste['score_medio']:.1f}")
+        
+        with col_nordeste:
+            if 'Nordeste' in analise_regoes:
+                dados_nordeste = analise_regoes['Nordeste']
+                st.subheader('🟡 Nordeste (Risco Moderado)')
+                
+                red_flags = []
+                if dados_nordeste['score_medio'] > 60:
+                    red_flags.append(f"⚠️ Score elevado: {dados_nordeste['score_medio']:.1f}")
+                if dados_nordeste['pct_apostas'] > 20:
+                    red_flags.append(f"⚠️ Atividade em casas de apostas: {dados_nordeste['pct_apostas']:.1f}%")
+                if dados_nordeste['pct_fraude'] > 10:
+                    red_flags.append(f"⚠️ Taxa de fraude: {dados_nordeste['pct_fraude']:.1f}%")
+                
+                if red_flags:
+                    for flag in red_flags:
+                        st.write(flag)
+                else:
+                    st.success("✅ Nenhuma bandeira vermelha detectada")
+                
+                st.info(f"💡 **Insight**: A região Nordeste apresenta {dados_nordeste['num_transacoes']} transações com padrão de risco moderado")
     
     with tab2:
         st.subheader('📋 Análise Comportamental Individual')
@@ -353,8 +492,8 @@ elif menu=='Behavior Analytics':
                     st.warning(f'❌ Nenhuma correspondência encontrada para: {e2e_input}')
         
         # Exibição de resultados
-        if resultado is not None and resultado is not None:
-            st.success(f'✅ Encontrado por: {resultado["tipo_busca"]}')
+        if resultado is not None:
+            st.success(f'✅ Encontrado por: {resultado["tipo_busca"]} | Região: **{resultado["regiao"]}**')
             
             # Indicador de risco
             if resultado['risco'] == 'Alto Risco':
