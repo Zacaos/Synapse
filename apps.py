@@ -126,6 +126,19 @@ elif menu=='Validação de Scores':
         "📦 Cálculo do Score em lote"
     )
 
+    st.info(
+        "**📋 Instruções de Upload:**\n\n"
+        "Seu arquivo CSV deve conter as seguintes colunas:\n\n"
+        "- **transaction_id** (obrigatório): Identificador único da transação\n"
+        "- **pix_key** (obrigatório): Chave Pix da transação\n"
+        "- **cpf** (obrigatório): CPF do cliente\n"
+        "- **amount** (obrigatório): Valor da transação (numérico)\n"
+        "- **timestamp** (opcional): Data/hora da transação\n"
+        "- **lat** (opcional): Latitude para análise geográfica\n"
+        "- **lon** (opcional): Longitude para análise geográfica\n\n"
+        "O sistema gerará automaticamente a coluna **score** (1-99) e **decision** (Alto/Médio/Baixo Risco)"
+    )
+
     arquivo = st.file_uploader(
         "Upload CSV",
         type=["csv"]
