@@ -487,6 +487,234 @@ elif menu=='Transações Monitoradas':
     score=st.slider('Score mínimo',0,100,50)
     st.dataframe(DF[DF.score>=score],use_container_width=True)
 
+
+    modo = st.radio(
+        "Modo de Operação",
+        ["Produção","Shadow Mode"]
+    )
+
+    st.divider()
+
+    c1,c2 = st.columns(2)
+
+    with c1:
+
+        valor = st.number_input(
+            "Valor da Transação",
+            min_value=0.0,
+            value=1500.00,
+            step=100.0
+        )
+
+        destinatario = st.text_input(
+            "Favorecido",
+            "João da Silva"
+        )
+
+        chave_pix = st.text_input(
+            "Chave Pix",
+            "11999999999"
+        )
+
+    with c2:
+
+        media_7dias = st.number_input(
+            "Média dos últimos 7 dias",
+            value=450.00
+        )
+
+        destino_conhecido = st.checkbox(
+            "Destinatário conhecido",
+            False
+        )
+
+        novo_dispositivo = st.checkbox(
+            "Novo dispositivo",
+            True
+        )
+
+        dict_flag = st.checkbox(
+            "DICT Fraud Marker",
+            True
+        )
+
+    if st.button("🔎 Analisar Transação"):
+
+        score = 1
+
+        if valor > 1000:
+            score += 20
+
+        if valor > media_7dias * 2:
+            score += 20
+
+        if not destino_conhecido:
+            score += 25
+
+        if novo_dispositivo:
+            score += 15
+
+        if dict_flag:
+            score += 18
+
+        score = min(score,99)
+
+        st.divider()
+
+        st.subheader("Resultado da Análise")
+
+        c1,c2,c3 = st.columns(3)
+
+        c1.metric("Score Synapse",score)
+
+        if score <= 30:
+
+            risco = "BAIXO"
+
+            c2.success("✅ Baixo Risco")
+
+            decisao = "APPROVE"
+
+        elif score <= 70:
+
+            risco = "MÉDIO"
+
+            c2.warning("⚠️ Médio Risco")
+
+            decisao = "CHALLENGE"
+
+        else:
+
+            risco = "ALTO"
+
+            c2.error("🚨 Alto Risco")
+
+            decisao = "BLOCK"
+
+        c3.metric(
+            "Recomendação",
+            decisao
+        )
+
+        if valor > media_7dias:
+
+            st.warning(f"""
+            Esta transação possui valor acima da média dos últimos 7 dias.
+
+            Média histórica: R$ {media_7dias:,.2f}
+
+            Valor atual: R$ {valor:,.2f}
+            """)
+
+        st.divider()
+
+        st.subheader("🤖 Agente de Recomendações Pix")
+
+        recomendacoes = []
+
+        if not destino_conhecido:
+            recomendacoes.append(
+                "Destinatário não identificado no histórico do cliente."
+            )
+
+        if valor > media_7dias:
+            recomendacoes.append(
+                "Valor superior ao padrão transacional recente."
+            )
+
+        if novo_dispositivo:
+            recomendacoes.append(
+                "Novo dispositivo detectado."
+            )
+
+        if dict_flag:
+            recomendacoes.append(
+                "Existem marcadores de risco associados ao ecossistema Pix."
+            )
+
+        for item in recomendacoes:
+            st.info(item)
+
+        st.markdown("""
+### Perguntas de Segurança
+
+✅ Você conhece o recebedor?
+
+✅ O pagamento foi solicitado por telefone?
+
+✅ Existe urgência para realizar esta transferência?
+
+✅ O favorecido foi validado por outro canal?
+        """)
+
+        st.divider()
+
+        st.subheader("🔐 MFA - Validação Reforçada")
+
+        mfa = st.checkbox(
+            "Solicitar MFA"
+        )
+
+        if mfa:
+
+            st.success(
+                "OTP / Biometria Facial solicitados ao usuário."
+            )
+
+        st.divider()
+
+        st.subheader("⛔ Bloqueio Cautelar")
+
+        if score > 70:
+
+            st.error("""
+Possível tentativa de fraude identificada.
+
+Conforme políticas internas de prevenção à fraude
+e mecanismos de monitoramento transacional,
+recomenda-se a aplicação de bloqueio cautelar
+para validação adicional da operação.
+            """)
+
+            if st.button(
+                "Aplicar Bloqueio Cautelar"
+            ):
+
+                st.success("""
+Transação encaminhada para validação.
+
+Prazo máximo de análise:
+24 horas.
+                """)
+
+        st.divider()
+
+        st.subheader("🚨 Contestação MED")
+
+        if st.button(
+            "Abrir Contestação MED"
+        ):
+
+            protocolo = (
+                f"MED-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            )
+
+            st.success(
+                f"Contestação criada: {protocolo}"
+            )
+
+        if modo == "Shadow Mode":
+
+            st.info("""
+SHADOW MODE ATIVO
+
+O score foi calculado normalmente.
+
+Nenhuma ação operacional será aplicada.
+
+As decisões são registradas apenas para análise do modelo.
+            """)
+
 elif menu=='Alertas':
     st.title('Alertas Antifraude')
     alertas=DF[DF.categoria!='Conta OK']
