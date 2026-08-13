@@ -10,7 +10,18 @@ st.set_page_config(page_title='Synapse Platform', page_icon='🛡️', layout='w
 
 if 'authenticated' not in st.session_state:
     st.session_state.authenticated = False
+    
+if "empresas" not in st.session_state:
+    st.session_state.empresas = []
 
+if "codigo_mfa" not in st.session_state:
+    st.session_state.codigo_mfa = None
+
+if "empresa_pendente" not in st.session_state:
+    st.session_state.empresa_pendente = None
+
+if "mfa_validado" not in st.session_state:
+    st.session_state.mfa_validado = False
 # Coordenadas das regiões do Brasil
 REGIOES_BRASIL = {
     'Sudeste': {'lat': -23.5, 'lon': -46.6, 'bounds': [(-28, -52), (-19, -41)]},
@@ -165,13 +176,175 @@ DF=gerar_dados()
 st.sidebar.title('🛡️Synapse Pix Antifraude')
 st.sidebar.write(f"Usuário: {st.session_state.user}")
 st.sidebar.write(f"Perfil: {st.session_state.perfil}")
+
 menu=st.sidebar.radio('Módulos',[
-'Synapse Dashboard', 'Validação de Scores','Behavior Analytics','Transações Monitoradas','Alertas'])
+'Cadastro Empresa',
+'Synapse Dashboard',
+'Validação de Scores',
+'Behavior Analytics',
+'Transações Monitoradas',
+'Alertas'])
 
 st.sidebar.divider()
 st.sidebar.info('Suporte 24x7 suporte@synapse.com')
 
 if menu=='Synapse Dashboard':
+    if menu == 'Cadastro Empresa':
+
+    st.title("🏢 Cadastro de Empresa")
+
+    st.info("""
+    Synapse encontra-se em fase de prototipação para uma futura startup.
+
+    Os dados coletados são utilizados exclusivamente para testes,
+    autenticação dos usuários e evolução da plataforma.
+    """)
+
+    with st.form("form_empresa"):
+
+        st.subheader("Dados da Empresa")
+
+        razao_social = st.text_input("Razão Social")
+        nome_fantasia = st.text_input("Nome Fantasia")
+        documento = st.text_input("CPF ou CNPJ")
+        email = st.text_input("E-mail")
+        telefone = st.text_input("Telefone")
+
+        st.subheader("Responsável")
+
+        responsavel = st.text_input("Nome Completo")
+        cargo = st.text_input("Cargo")
+
+        st.subheader("Consentimento LGPD")
+
+        st.text_area(
+            "Termo de Consentimento",
+            """
+Ao realizar meu cadastro no Synapse, autorizo o tratamento dos dados pessoais
+e empresariais informados para autenticação, comunicação, envio de MFA,
+testes e evolução da plataforma.
+
+O Synapse é atualmente um protótipo em desenvolvimento para uma futura startup.
+
+Comprometemo-nos a seguir os princípios da Lei Geral de Proteção de Dados
+(LGPD - Lei nº 13.709/2018), garantindo confidencialidade, transparência
+e utilização adequada das informações fornecidas.
+
+Os dados não serão comercializados ou compartilhados com terceiros sem
+base legal apropriada.
+
+Ao prosseguir, declaro que li e concordo com os termos apresentados.
+            """,
+            height=250,
+            disabled=True
+        )
+
+        aceite = st.checkbox(
+            "Li e concordo com o Termo de Consentimento e Política de Privacidade"
+        )
+
+        cadastrar = st.form_submit_button("Cadastrar Empresa")
+
+    if cadastrar:
+
+        if not aceite:
+            st.error("É obrigatório aceitar o termo LGPD.")
+            st.stop()
+
+        if not email:
+            st.error("Informe um e-mail válido.")
+            st.stop()
+
+        codigo = random.randint(100000,999999)
+
+        st.session_state.codigo_mfa = str(codigo)
+
+        st.session_state.empresa_pendente = {
+            "Razão Social": razao_social,
+            "Nome Fantasia": nome_fantasia,
+            "CPF/CNPJ": documento,
+            "Email": email,
+            "Telefone": telefone,
+            "Responsável": responsavel,
+            "Cargo": cargo,
+            "Aceite LGPD": True,
+            "Data Aceite": datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        }
+
+        st.success("Cadastro recebido.")
+
+        st.warning(
+            f"""
+AMBIENTE DE DEMONSTRAÇÃO
+
+Código MFA Gerado:
+
+{codigo}
+
+Em produção este código será enviado por e-mail.
+            """
+        )
+
+    if st.session_state.empresa_pendente:
+
+        st.divider()
+
+        st.subheader("🔐 MFA por E-mail")
+
+        st.write(
+            f"E-mail cadastrado: {st.session_state.empresa_pendente['Email']}"
+        )
+
+        codigo_digitado = st.text_input(
+            "Informe o código recebido"
+        )
+
+        if st.button("Validar MFA"):
+
+            if codigo_digitado == st.session_state.codigo_mfa:
+
+                st.session_state.empresas.append(
+                    st.session_state.empresa_pendente
+                )
+
+                st.session_state.mfa_validado = True
+
+                st.success(
+                    "Cadastro validado com sucesso."
+                )
+
+            else:
+
+                st.error(
+                    "Código inválido."
+                )
+
+    if len(st.session_state.empresas) > 0:
+
+        st.divider()
+
+        st.subheader("🏢 Empresas Cadastradas")
+
+        empresas_df = pd.DataFrame(
+            st.session_state.empresas
+        )
+
+        st.dataframe(
+            empresas_df,
+            use_container_width=True
+        )
+
+    st.divider()
+
+    st.caption("""
+Synapse (Protótipo)
+
+Plataforma em fase de desenvolvimento para futura startup.
+
+Os dados são tratados conforme os princípios da LGPD,
+utilizados exclusivamente para autenticação,
+envio de MFA, testes, validações e evolução da solução.
+    """)
     st.title('Synapse Dashboard')
     c1,c2,c3,c4,c5,c6=st.columns(6)
     c1.metric('TPV',f"R$ {DF.amount.sum():,.0f}")
