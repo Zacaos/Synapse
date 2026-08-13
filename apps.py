@@ -166,8 +166,7 @@ st.sidebar.title('🛡️Synapse Pix Antifraude')
 st.sidebar.write(f"Usuário: {st.session_state.user}")
 st.sidebar.write(f"Perfil: {st.session_state.perfil}")
 menu=st.sidebar.radio('Módulos',[
-'Synapse Dashboard','Consulta Chave Pix','Consulta Contas',
-'Validação de Scores','Behavior Analytics','Transações Monitoradas','Alertas'])
+'Synapse Dashboard', 'Validação de Scores','Behavior Analytics','Transações Monitoradas','Alertas'])
 
 st.sidebar.divider()
 st.sidebar.info('Suporte 24x7 suporte@synapse.com')
@@ -198,26 +197,7 @@ if menu=='Synapse Dashboard':
 
     st.subheader('Transações Monitoradas')
     st.dataframe(DF.head(100),use_container_width=True)
-
-elif menu=='Consulta Chave Pix':
-    st.title('Consulta de Score por Chave Pix')
-    chave=st.text_input('Digite a chave Pix')
-    if chave:
-        st.metric('Score',np.random.randint(60,99))
-        st.metric('Classificação','Alto Risco')
-        st.metric('TPV','R$ 458.000')
-        st.dataframe(DF[['pix_key','amount','score','categoria']].head(20),use_container_width=True)
-
-elif menu=='Consulta Contas':
-    st.title('Consulta de Contas')
-    conta=st.text_input('CPF/CNPJ/Conta')
-    if conta:
-        t1,t2,t3,t4=st.tabs(['Resumo','Dispositivos','Pix','Behavior'])
-        t1.write('Resumo da conta')
-        t2.write('Dispositivos vinculados')
-        t3.dataframe(DF[['pix_key','score']].head(10))
-        t4.write('Indicadores comportamentais')
-
+    
 elif menu=='Validação de Scores':
 
 # --------------------------------------------------
