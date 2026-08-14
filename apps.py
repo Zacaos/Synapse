@@ -213,7 +213,7 @@ if menu=='Synapse Dashboard':
     st.altair_chart(alt.Chart(donut).mark_arc(innerRadius=70).encode(theta='valor:Q',color='categoria:N'),use_container_width=True)
 
     st.subheader('Transações Monitoradas')
-    st.dataframe(DF.head(100),use_container_width=True)
+    st.dataframe(DF.head(100),use_container_width=True);
 
 if menu=='Cadastro de empresa'
 
