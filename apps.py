@@ -214,6 +214,85 @@ if menu=='Synapse Dashboard':
 
     st.subheader('Transações Monitoradas')
     st.dataframe(DF.head(100),use_container_width=True)
+
+elif menu=='Cadastro de empresa'
+
+#Cadastro da empresa#
+
+st.info(
+    """
+    ⚠️ **Protótipo em desenvolvimento**
+
+    O Synapse encontra-se em fase de validação de produto para uma futura startup.
+    Algumas funcionalidades poderão ser alteradas ou removidas sem aviso prévio.
+    """
+)
+
+with st.form("cadastro_empresa"):
+
+    st.markdown("### Dados da Empresa")
+
+    razao_social = st.text_input("Razão Social")
+    nome_fantasia = st.text_input("Nome Fantasia")
+    documento = st.text_input("CPF ou CNPJ")
+    email = st.text_input("E-mail")
+    telefone = st.text_input("Telefone")
+
+    st.markdown("### Responsável")
+
+    responsavel = st.text_input("Nome Completo")
+    cargo = st.text_input("Cargo")
+
+    st.markdown("### Termo de Consentimento LGPD")
+
+    st.text_area(
+        "Termo",
+        value="""
+Ao realizar meu cadastro no Synapse, autorizo o tratamento dos dados
+pessoais e empresariais informados para fins de autenticação, comunicação,
+testes, validação e evolução da plataforma.
+
+O Synapse é um protótipo de uma futura startup e os dados informados
+serão utilizados exclusivamente para fins relacionados ao uso da solução.
+
+Comprometemo-nos a observar os princípios da LGPD (Lei Geral de Proteção
+de Dados - Lei nº 13.709/2018), adotando medidas de segurança,
+confidencialidade, transparência e minimização dos dados coletados.
+
+Ao prosseguir, declaro que li e concordo com os termos apresentados.
+        """,
+        height=220,
+        disabled=True
+    )
+
+    aceite = st.checkbox(
+        "Li e concordo com o Termo de Consentimento e Política de Privacidade."
+    )
+
+    enviar = st.form_submit_button("Cadastrar")
+
+if enviar:
+
+    if not aceite:
+        st.error("É necessário aceitar o termo LGPD.")
+        st.stop()
+
+    if not validar_email(email):
+        st.error("E-mail inválido.")
+        st.stop()
+
+    codigo = str(random.randint(100000, 999999))
+
+    # Produção:
+    # enviar_email(email, codigo)
+
+    st.session_state.codigo_mfa = codigo
+    st.session_state.email_usuario = email
+
+    st.success("Cadastro inicial realizado.")
+
+
+
     
 elif menu=='Validação de Scores':
 
