@@ -215,7 +215,7 @@ if menu=='Synapse Dashboard':
     st.subheader('Transações Monitoradas')
     st.dataframe(DF.head(100),use_container_width=True);
 
-if menu=='Cadastro de empresa'
+elif menu=='Cadastro de empresa'
 
 #Cadastro da empresa#
 
