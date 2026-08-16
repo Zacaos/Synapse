@@ -178,7 +178,6 @@ st.sidebar.write(f"Usuário: {st.session_state.user}")
 st.sidebar.write(f"Perfil: {st.session_state.perfil}")
 
 menu=st.sidebar.radio('Módulos',[
-'Cadastro Empresa',
 'Synapse Dashboard',
 'Validação de Scores',
 'Behavior Analytics',
