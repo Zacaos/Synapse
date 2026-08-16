@@ -27,10 +27,94 @@ if "mfa_validado" not in st.session_state:
 
 @st.cache_data
 def gerar_dados():
+
     random.seed(42)
     np.random.seed(42)
-    n=3000
-    cats=['Conta OK','Mule Account','Application Fraud','Scammer Account']
+
+    n = 3000
+
+    cats = [
+        'Conta OK',
+        'Mule Account',
+        'Application Fraud',
+        'Scammer Account'
+    ]
+
+    df = pd.DataFrame({
+
+        'transaction_id': [
+            f'PIX{i}'
+            for i in range(n)
+        ],
+
+        'timestamp': [
+            datetime.now() -
+            timedelta(
+                hours=random.randint(0,720)
+            )
+            for _ in range(n)
+        ],
+
+        'pix_key': [
+            f'cliente{i}@mail.com'
+            for i in range(n)
+        ],
+
+        'cpf': [
+            str(10000000000+i)
+            for i in range(n)
+        ],
+
+        'documento': [
+            f'RG{10000000+i}'
+            for i in range(n)
+        ],
+
+        'telefone': [
+            f'119{1000000+i}'
+            for i in range(n)
+        ],
+
+        'email': [
+            f'usuario{i}@email.com'
+            for i in range(n)
+        ],
+
+        'amount': np.round(
+            np.random.lognormal(
+                6.5,
+                1.1,
+                n
+            ),
+            2
+        ),
+
+        'score': np.random.randint(
+            1,
+            100,
+            n
+        ),
+
+        'destination': np.random.choice(
+            [
+                'E-commerce',
+                'Pessoa Física',
+                'Casa de Apostas',
+                'Serviços'
+            ],
+            n,
+            p=[0.5,0.3,0.15,0.05]
+        )
+
+    })
+
+    df['categoria'] = np.random.choice(
+        cats,
+        n,
+        p=[0.9,0.04,0.03,0.03]
+    )
+
+    return df
 
 
 def decision(score):
