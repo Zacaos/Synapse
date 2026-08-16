@@ -266,7 +266,7 @@ with col2:
         st.session_state.menu = "IA Análise de Score"
 
 with col3:
-    if st.button("ℹ️Quem Somos", use_container_width=True):
+    if st.button("Quem Somos", use_container_width=True):
         st.session_state.menu = "Quem somos"
 
 
