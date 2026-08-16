@@ -210,7 +210,7 @@ if menu=='Synapse Dashboard':
     
 ###Análise comportamental por tipo de chave Pix
 
-elif menu=='Comportamento por Score Pix':
+elif menu=='IA Análise Score Pix':
     st.title('🔍 Behavior Analytics')
     
     st.subheader('📋 Análise Comportamental Individual')
