@@ -227,8 +227,7 @@ col1, col2, col3 = st.columns([1, 2, 1])
 
 with col2:
     st.title("🛡️ Synapse Pix Antifraude")
-    st.write(f"Usuário: {st.session_state.user}")
-    st.write(f"Perfil: {st.session_state.perfil}")
+    st.subtitle("Análise em tempo real de transações Pix")
 
 
 # MENU HORIZONTAL
