@@ -172,7 +172,7 @@ st.sidebar.write(f"Perfil: {st.session_state.perfil}")
 
 menu=st.sidebar.radio('Módulos',[
 'Synapse Dashboard',
-'IA Insights Análise de Score',
+'IA Análise de Score',
 'Transações Monitoradas',
 'Alertas'])
 
