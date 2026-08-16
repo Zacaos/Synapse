@@ -267,7 +267,7 @@ with col2:
 
 with col3:
     if st.button("Quem Somos", use_container_width=True):
-        st.session_state.menu = "Quem somos"
+        st.session_state.menu = "Quem Somos"
 
 
 menu = st.session_state.menu
