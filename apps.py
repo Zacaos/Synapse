@@ -257,7 +257,7 @@ with col2:
         st.session_state.menu = "IA Análise de Score"
 
 with col3:
-    if st.button(" ℹ️Quem Somos", use_container_width=True):
+    if st.button("ℹ️Quem Somos", use_container_width=True):
         st.session_state.menu = "Quem somos"
 
 
@@ -723,7 +723,8 @@ elif menu == "Quem Somos":
 
     st.title("🛡️ Quem Somos")
 
-    st.markdown("""
+    st.markdown
+    ("""
 # Pix Synapse Fraud Prevention
 
 O **Pix Synapse Fraud Prevention** é um protótipo desenvolvido com o objetivo de demonstrar como modelos de Inteligência Artificial, Machine Learning e análise transacional podem auxiliar na prevenção de fraudes no ecossistema Pix.
