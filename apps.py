@@ -172,8 +172,7 @@ st.sidebar.write(f"Perfil: {st.session_state.perfil}")
 
 menu=st.sidebar.radio('Módulos',[
 'Synapse Dashboard',
-'Validação de Scores',
-'Behavior Analytics',
+'Análise de Score Por tipo de chave',
 'Transações Monitoradas',
 'Alertas'])
 
@@ -396,10 +395,7 @@ elif menu=='Behavior Analytics':
         st.subheader('📑 Histórico de Transações')
         st.dataframe(resultado['dados_detalhados'].sort_values('timestamp', ascending=False), use_container_width=True)
 
-elif menu=='Transações Monitoradas':
-    st.title('Transações Monitoradas')
-    score=st.slider('Score mínimo',0,100,50)
-    st.dataframe(DF[DF.score>=score],use_container_width=True)
+
 
 
     modo = st.radio(
