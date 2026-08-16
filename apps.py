@@ -227,7 +227,7 @@ col1, col2, col3 = st.columns([1, 2, 1])
 
 with col2:
     st.title("🛡️ Synapse Pix Antifraude")
-    st.title("Análise em tempo real de transações Pix")
+    st.title("Análise em tempo real")
 
 
 # MENU HORIZONTAL
@@ -275,7 +275,6 @@ menu = st.session_state.menu
 
 DF=gerar_dados()
 
-st.sidebar.title('🛡️Synapse Pix Antifraude')
 st.sidebar.write(f"Usuário: {st.session_state.user}")
 st.sidebar.write(f"Perfil: {st.session_state.perfil}")
 
