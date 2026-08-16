@@ -170,14 +170,7 @@ st.sidebar.title('🛡️Synapse Pix Antifraude')
 st.sidebar.write(f"Usuário: {st.session_state.user}")
 st.sidebar.write(f"Perfil: {st.session_state.perfil}")
 
-menu=st.sidebar.radio('Módulos',[
-'Synapse Dashboard',
-'IA Análise de Score',
-'Transações Monitoradas',
-'Alertas'])
 
-st.sidebar.divider()
-st.sidebar.info('Suporte 24x7 suporte@synapse.com')
 
 if menu=='Synapse Dashboard':
     st.title('Synapse Dashboard')
