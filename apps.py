@@ -644,13 +644,3 @@ Nenhuma ação operacional será aplicada.
 
 As decisões são registradas apenas para análise do modelo.
             """)
-
-elif menu=='Alertas':
-    st.title('Alertas Antifraude')
-    alertas=DF[DF.categoria!='Conta OK']
-    c1,c2=st.columns(2)
-    c1.metric('Total Alertas',len(alertas))
-    c2.metric('Volume Suspeito',f"R$ {alertas.amount.sum():,.0f}")
-    h=alertas.copy(); h['hora']=pd.to_datetime(h.timestamp).dt.hour
-    st.bar_chart(h.groupby('hora').size())
-    st.dataframe(alertas.head(200),use_container_width=True)
