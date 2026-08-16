@@ -719,7 +719,7 @@ As decisões são registradas apenas para análise do modelo.
             """)
 
 
-elif menu == "ℹ️Quem Somos":
+elif menu == "Quem Somos":
 
     st.title("🛡️ Quem Somos")
 
