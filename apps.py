@@ -22,14 +22,7 @@ if "empresa_pendente" not in st.session_state:
 
 if "mfa_validado" not in st.session_state:
     st.session_state.mfa_validado = False
-# Coordenadas das regiões do Brasil
-REGIOES_BRASIL = {
-    'Sudeste': {'lat': -23.5, 'lon': -46.6, 'bounds': [(-28, -52), (-19, -41)]},
-    'Nordeste': {'lat': -5.5, 'lon': -39.0, 'bounds': [(-1, -35), (-18, -48)]},
-    'Norte': {'lat': -3.1, 'lon': -60.0, 'bounds': [(2, -49), (-17, -74)]},
-    'Centro-Oeste': {'lat': -15.8, 'lon': -56.0, 'bounds': [(-7, -49), (-23, -62)]},
-    'Sul': {'lat': -28.5, 'lon': -51.5, 'bounds': [(-22, -49), (-34, -56)]}
-}
+
 
 @st.cache_data
 def gerar_dados():
