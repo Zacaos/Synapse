@@ -172,7 +172,7 @@ st.sidebar.write(f"Perfil: {st.session_state.perfil}")
 
 menu=st.sidebar.radio('Módulos',[
 'Synapse Dashboard',
-'Análise de Score Por tipo de chave',
+'Comportamento por Score Pix',
 'Transações Monitoradas',
 'Alertas'])
 
@@ -210,7 +210,7 @@ if menu=='Synapse Dashboard':
     
 ###Análise comportamental por tipo de chave Pix
 
-elif menu=='Behavior Analytics':
+elif menu=='Comportamento por Score Pix':
     st.title('🔍 Behavior Analytics')
     
     st.subheader('📋 Análise Comportamental Individual')
