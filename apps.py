@@ -227,7 +227,7 @@ col1, col2, col3 = st.columns([1, 2, 1])
 
 with col2:
     st.title("🛡️ Synapse Pix Antifraude")
-    st.subtitle("Análise em tempo real de transações Pix")
+    st.title("Análise em tempo real de transações Pix")
 
 
 # MENU HORIZONTAL
