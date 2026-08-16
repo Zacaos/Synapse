@@ -257,7 +257,7 @@ with col2:
         st.session_state.menu = "IA Análise de Score"
 
 with col3:
-    if st.button(" ℹ️ Quem Somos", use_container_width=True):
+    if st.button(" ℹ️Quem Somos", use_container_width=True):
         st.session_state.menu = "Quem somos"
 
 
@@ -719,7 +719,7 @@ As decisões são registradas apenas para análise do modelo.
             """)
 
 
-elif menu == "Quem Somos":
+elif menu == "ℹ️Quem Somos":
 
     st.title("🛡️ Quem Somos")
 
@@ -749,7 +749,6 @@ Ao mesmo tempo, também gerou novos desafios relacionados a:
 - Golpes de falsa central
 - Contas utilizadas para lavagem de recursos
 
----
 
 ## Nossa Proposta
 
@@ -759,39 +758,7 @@ O Pix Synapse Fraud Prevention utiliza conceitos de:
 
 ✅ Machine Learning
 
-✅ Behavioral Analytics
-
-✅ Risk Scoring
-
 ✅ Monitoramento Transacional
 
 ✅ Alertas Preventivos
 
-✅ Shadow Mode
-
-✅ Contestação MED
-
----
-
-## O que a Plataforma Demonstra?
-
-O protótipo permite:
-
-- Simulação de transações Pix
-- Cálculo de Score de Risco
-- Classificação de risco
-- Recomendações de prevenção
-- Validação reforçada (MFA)
-- Simulações de bloqueio cautelar
-- Processamento de bases para análise comportamental
-
----
-
-## Score de Risco
-
-A plataforma gera um score de:
-
-```text
-1  = Baixo Risco
-
-99 = Alto Risco
