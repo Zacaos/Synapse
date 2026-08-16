@@ -181,12 +181,9 @@ with col2:
         st.session_state.menu = "IA Análise de Score"
 
 with col3:
-    if st.button("🔍 Transações", use_container_width=True):
+    if st.button("🔍 Transações Monitoradas", use_container_width=True):
         st.session_state.menu = "Transações Monitoradas"
 
-with col4:
-    if st.button("🚨 Alertas", use_container_width=True):
-        st.session_state.menu = "Alertas"
 
 menu = st.session_state.menu
 
