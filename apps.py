@@ -760,5 +760,5 @@ O Pix Synapse Fraud Prevention utiliza conceitos de:
 
 ✅ Monitoramento Transacional
 
-✅ Alertas Preventivos
+✅ Alertas Preventivos""")
 
