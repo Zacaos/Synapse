@@ -167,6 +167,26 @@ if not st.session_state.authenticated:
 
 # MENU HORIZONTAL
 
+st.markdown("""
+<style>
+
+div.stButton > button {
+    height: 50px;
+    border-radius: 12px;
+    border: 1px solid #1E3A8A;
+    background-color: #2563EB;
+    color: white;
+    font-weight: bold;
+}
+
+div.stButton > button:hover {
+    background-color: #1E40AF;
+    color: white;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
 col1, col2, col3, col4 = st.columns(4)
 
 if "menu" not in st.session_state:
