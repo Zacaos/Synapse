@@ -257,8 +257,8 @@ with col2:
         st.session_state.menu = "IA Análise de Score"
 
 with col3:
-    if st.button("🔍 Transações Monitoradas", use_container_width=True):
-        st.session_state.menu = "Transações Monitoradas"
+    if st.button(" ℹ️ Quem Somos", use_container_width=True):
+        st.session_state.menu = "Quem somos"
 
 
 menu = st.session_state.menu
@@ -717,3 +717,81 @@ Nenhuma ação operacional será aplicada.
 
 As decisões são registradas apenas para análise do modelo.
             """)
+
+
+elif menu == "Quem Somos":
+
+    st.title("🛡️ Quem Somos")
+
+    st.markdown("""
+# Pix Synapse Fraud Prevention
+
+O **Pix Synapse Fraud Prevention** é um protótipo desenvolvido com o objetivo de demonstrar como modelos de Inteligência Artificial, Machine Learning e análise transacional podem auxiliar na prevenção de fraudes no ecossistema Pix.
+
+## Nossa Visão
+
+Acreditamos que a prevenção à fraude deve acontecer antes que o prejuízo ocorra.
+
+Por isso, buscamos criar mecanismos capazes de analisar transações em tempo real, identificar comportamentos suspeitos e apoiar instituições financeiras na tomada de decisão.
+
+---
+
+## O Problema
+
+O crescimento do Pix trouxe mais inclusão financeira, velocidade e conveniência.
+
+Ao mesmo tempo, também gerou novos desafios relacionados a:
+
+- Engenharia Social
+- Contas Laranja (Mule Accounts)
+- Account Takeover
+- Application Fraud
+- Golpes de falsa central
+- Contas utilizadas para lavagem de recursos
+
+---
+
+## Nossa Proposta
+
+O Pix Synapse Fraud Prevention utiliza conceitos de:
+
+✅ Inteligência Artificial
+
+✅ Machine Learning
+
+✅ Behavioral Analytics
+
+✅ Risk Scoring
+
+✅ Monitoramento Transacional
+
+✅ Alertas Preventivos
+
+✅ Shadow Mode
+
+✅ Contestação MED
+
+---
+
+## O que a Plataforma Demonstra?
+
+O protótipo permite:
+
+- Simulação de transações Pix
+- Cálculo de Score de Risco
+- Classificação de risco
+- Recomendações de prevenção
+- Validação reforçada (MFA)
+- Simulações de bloqueio cautelar
+- Processamento de bases para análise comportamental
+
+---
+
+## Score de Risco
+
+A plataforma gera um score de:
+
+```text
+1  = Baixo Risco
+
+99 = Alto Risco
