@@ -721,7 +721,7 @@ As decisões são registradas apenas para análise do modelo.
 
 elif menu == "Quem Somos":
 
-    st.title("🛡️ Quem Somos")
+    st.title("Quem Somos")
 
     st.markdown
     ("""
