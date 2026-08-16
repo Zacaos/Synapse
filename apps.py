@@ -209,7 +209,70 @@ if menu=='Synapse Dashboard':
 
 
     
-elif menu=='Validação de Scores':
+###Análise comportamental por tipo de chave Pix
+
+elif menu=='Behavior Analytics':
+    st.title('🔍 Behavior Analytics')
+    
+    st.subheader('📋 Análise Comportamental Individual')
+    
+    # Seleção do tipo de busca
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        tipo_cpf = st.checkbox('📋 CPF', value=False)
+    with col2:
+        tipo_pix = st.checkbox('🔑 Chave Pix', value=False)
+    with col3:
+        tipo_doc = st.checkbox('🆔 Documento', value=False)
+    with col4:
+        tipo_email = st.checkbox('📧 E-mail', value=False)
+    
+    col5, col6, col7 = st.columns(3)
+    with col5:
+        tipo_tel = st.checkbox('📱 Telefone', value=False)
+    with col6:
+        tipo_aleatorio = st.checkbox('🎲 Aleatória', value=False)
+    with col7:
+        tipo_e2e = st.checkbox('🔗 E2E (Todos os campos)', value=False)
+    
+    st.divider()
+    
+    # Entrada de dados
+    col_entrada1, col_entrada2 = st.columns([3, 1])
+    
+    with col_entrada1:
+        if tipo_cpf:
+            entrada = st.text_input('Digite o CPF', placeholder='Ex: 10000000000', key='cpf_input')
+            tipo_selecionado = 'cpf'
+        elif tipo_pix:
+            entrada = st.text_input('Digite a Chave Pix', placeholder='Ex: cliente0@mail.com', key='pix_input')
+            tipo_selecionado = 'pix_key'
+        elif tipo_doc:
+            entrada = st.text_input('Digite o Documento (RG)', placeholder='Ex: RG10000000', key='doc_input')
+            tipo_selecionado = 'documento'
+        elif tipo_tel:
+            entrada = st.text_input('Digite o Telefone', placeholder='Ex: 11900000000', key='tel_input')
+            tipo_selecionado = 'telefone'
+        elif tipo_email:
+            entrada = st.text_input('Digite o E-mail', placeholder='Ex: usuario0@email.com', key='email_input')
+            tipo_selecionado = 'email'
+        elif tipo_e2e:
+            entrada = st.text_input('Digite qualquer identificador', placeholder='Ex: usuario0@email.com', key='e2e_input')
+            tipo_selecionado = 'e2e'
+        else:
+            entrada = None
+            tipo_selecionado = None
+    
+    with col_entrada2:
+        if tipo_aleatorio:
+            btn_submit = st.button('🎲 Consultar', use_container_width=True)
+        else:
+            btn_submit = st.button('🔍 Consultar', use_container_width=True)
+    
+    resultado = None
+
+
+    elif menu=='Validação de Scores':
 
 # --------------------------------------------------
 # PROCESSAMENTO DA BASE DE SCORES
@@ -286,68 +349,7 @@ elif menu=='Validação de Scores':
                 "pix_scores.csv"
             )
 
-
-
-
-elif menu=='Behavior Analytics':
-    st.title('🔍 Behavior Analytics')
     
-    st.subheader('📋 Análise Comportamental Individual')
-    
-    # Seleção do tipo de busca
-    col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        tipo_cpf = st.checkbox('📋 CPF', value=False)
-    with col2:
-        tipo_pix = st.checkbox('🔑 Chave Pix', value=False)
-    with col3:
-        tipo_doc = st.checkbox('🆔 Documento', value=False)
-    with col4:
-        tipo_email = st.checkbox('📧 E-mail', value=False)
-    
-    col5, col6, col7 = st.columns(3)
-    with col5:
-        tipo_tel = st.checkbox('📱 Telefone', value=False)
-    with col6:
-        tipo_aleatorio = st.checkbox('🎲 Aleatória', value=False)
-    with col7:
-        tipo_e2e = st.checkbox('🔗 E2E (Todos os campos)', value=False)
-    
-    st.divider()
-    
-    # Entrada de dados
-    col_entrada1, col_entrada2 = st.columns([3, 1])
-    
-    with col_entrada1:
-        if tipo_cpf:
-            entrada = st.text_input('Digite o CPF', placeholder='Ex: 10000000000', key='cpf_input')
-            tipo_selecionado = 'cpf'
-        elif tipo_pix:
-            entrada = st.text_input('Digite a Chave Pix', placeholder='Ex: cliente0@mail.com', key='pix_input')
-            tipo_selecionado = 'pix_key'
-        elif tipo_doc:
-            entrada = st.text_input('Digite o Documento (RG)', placeholder='Ex: RG10000000', key='doc_input')
-            tipo_selecionado = 'documento'
-        elif tipo_tel:
-            entrada = st.text_input('Digite o Telefone', placeholder='Ex: 11900000000', key='tel_input')
-            tipo_selecionado = 'telefone'
-        elif tipo_email:
-            entrada = st.text_input('Digite o E-mail', placeholder='Ex: usuario0@email.com', key='email_input')
-            tipo_selecionado = 'email'
-        elif tipo_e2e:
-            entrada = st.text_input('Digite qualquer identificador', placeholder='Ex: usuario0@email.com', key='e2e_input')
-            tipo_selecionado = 'e2e'
-        else:
-            entrada = None
-            tipo_selecionado = None
-    
-    with col_entrada2:
-        if tipo_aleatorio:
-            btn_submit = st.button('🎲 Consultar', use_container_width=True)
-        else:
-            btn_submit = st.button('🔍 Consultar', use_container_width=True)
-    
-    resultado = None
     
     # Processar a submissão
     if btn_submit:
