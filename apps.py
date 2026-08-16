@@ -23,6 +23,32 @@ if "empresa_pendente" not in st.session_state:
 if "mfa_validado" not in st.session_state:
     st.session_state.mfa_validado = False
 
+# MENU HORIZONTAL
+
+col1, col2, col3, col4 = st.columns(4)
+
+if "menu" not in st.session_state:
+    st.session_state.menu = "Synapse Dashboard"
+
+with col1:
+    if st.button("📊 Dashboard", use_container_width=True):
+        st.session_state.menu = "Synapse Dashboard"
+
+with col2:
+    if st.button("🧠 IA Score", use_container_width=True):
+        st.session_state.menu = "IA Análise de Score"
+
+with col3:
+    if st.button("🔍 Transações", use_container_width=True):
+        st.session_state.menu = "Transações Monitoradas"
+
+with col4:
+    if st.button("🚨 Alertas", use_container_width=True):
+        st.session_state.menu = "Alertas"
+
+menu = st.session_state.menu
+
+
 
 @st.cache_data
 def gerar_dados():
