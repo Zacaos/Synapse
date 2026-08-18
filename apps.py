@@ -546,8 +546,6 @@ if not recommendations:
 for rec in recommendations:
 
     st.info(rec)
-
-   st.divider()
     
     recomendacoes = []
 
