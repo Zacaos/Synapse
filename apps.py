@@ -391,8 +391,7 @@ if menu == "Synapse Dashboard":
         DF.head(100),
         use_container_width=True
     );
-        
-elif menu == "IA Análise de Score":
+        elif menu == "IA Análise de Score":
 
     st.title("🧠 IA Análise de Score")
 
@@ -401,62 +400,171 @@ elif menu == "IA Análise de Score":
     )
 
     valor = st.number_input(
-        "Valor Transação",
+        "Valor da transação",
+        min_value=0.0,
         value=1000.0
     )
 
     media_7dias = st.number_input(
-        "Média Últimos 7 Dias",
+        "Média dos últimos 7 dias",
+        min_value=0.0,
         value=500.0
     )
 
     novo_dispositivo = st.checkbox(
-        "Novo dispositivo"
+        "Novo dispositivo detectado"
     )
 
     dict_flag = st.checkbox(
-        "Flag de risco"
+        "Flag de risco identificada"
     )
 
     score = st.slider(
-        "Score",
+        "Score de Risco",
         0,
         100,
         75
     )
 
     modo = st.selectbox(
-        "Modo",
+        "Modo de Execução",
         [
             "Produção",
             "Shadow Mode"
         ]
     )
 
-    recomendacoes = []        
-    
+    st.divider()
+
+    recomendacoes = []
+
     if not destino_conhecido:
-            recomendacoes.append(
-                "Destinatário não identificado no histórico do cliente."
-            )
+        recomendacoes.append(
+            "Destinatário não identificado no histórico do cliente."
+        )
 
-        if valor > media_7dias:
-            recomendacoes.append(
-                "Valor superior ao padrão transacional recente."
-            )
+    if valor > media_7dias:
+        recomendacoes.append(
+            "Valor superior ao padrão transacional recente."
+        )
 
-        if novo_dispositivo:
-            recomendacoes.append(
-                "Novo dispositivo detectado."
-            )
+    if novo_dispositivo:
+        recomendacoes.append(
+            "Novo dispositivo detectado."
+        )
 
-        if dict_flag:
-            recomendacoes.append(
-                "Existem marcadores de risco associados ao ecossistema Pix."
-            )
+    if dict_flag:
+        recomendacoes.append(
+            "Existem marcadores de risco associados ao ecossistema Pix."
+        )
 
+    st.subheader("📋 Recomendações")
+
+    if recomendacoes:
         for item in recomendacoes:
             st.info(item)
+    else:
+        st.success(
+            "Nenhum comportamento suspeito identificado."
+        )
+
+    st.divider()
+
+    st.markdown("""
+### Perguntas de Segurança
+
+✅ Você conhece o recebedor?
+
+✅ O pagamento foi solicitado por telefone?
+
+✅ Existe urgência para realizar esta transferência?
+
+✅ O favorecido foi validado por outro canal?
+""")
+
+    st.divider()
+
+    st.subheader("🔐 MFA - Validação Reforçada")
+
+    mfa = st.checkbox(
+        "Solicitar MFA"
+    )
+
+    if mfa:
+        st.success(
+            "OTP / Biometria Facial solicitados ao usuário."
+        )
+
+    st.divider()
+
+    st.subheader("⛔ Bloqueio Cautelar")
+
+    if score > 70:
+
+        st.error("""
+Possível tentativa de fraude identificada.
+
+Conforme políticas internas de prevenção à fraude
+e mecanismos de monitoramento transacional,
+recomenda-se a aplicação de bloqueio cautelar
+para validação adicional da operação.
+""")
+
+        if st.button(
+            "Aplicar Bloqueio Cautelar"
+        ):
+            st.success("""
+Transação encaminhada para validação.
+
+Prazo máximo de análise:
+24 horas.
+""")
+
+    st.divider()
+
+    st.subheader("🚨 Contestação MED")
+
+    if st.button(
+        "Abrir Contestação MED"
+    ):
+
+        protocolo = (
+            f"MED-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+        )
+
+        st.success(
+            f"Contestação criada: {protocolo}"
+        )
+
+    if modo == "Shadow Mode":
+
+        st.info("""
+SHADOW MODE ATIVO
+
+O score foi calculado normalmente.
+
+Nenhuma ação operacional será aplicada.
+
+As decisões são registradas apenas para análise do modelo.
+""")
+
+    st.divider()
+
+    st.subheader("📊 Resultado")
+
+    if score >= 80:
+        st.error("ALTO RISCO")
+
+    elif score >= 50:
+        st.warning("MÉDIO RISCO")
+
+    else:
+        st.success("BAIXO RISCO")
+
+    st.metric(
+        "Score Atual",
+        score
+    )
 
         st.markdown("""
 ### Perguntas de Segurança
