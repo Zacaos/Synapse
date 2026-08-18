@@ -113,8 +113,30 @@ def gerar_dados():
         n,
         p=[0.9,0.04,0.03,0.03]
     )
+required = {'lat', 'lon', 'timestamp'}
+missing = required - set(dados_query.columns)
 
+if missing:
+    raise ValueError(
+        f"Colunas obrigatórias ausentes: {list(missing)}. "
+        f"Disponíveis: {list(dados_query.columns)}"
+    )
+
+locs = dados_query[['lat', 'lon', 'timestamp']].sort_values('timestamp')
     return df
+
+
+required = {'lat', 'lon', 'timestamp'}
+missing = required - set(dados_query.columns)
+
+if missing:
+    raise ValueError(
+        f"Colunas obrigatórias ausentes: {list(missing)}. "
+        f"Disponíveis: {list(dados_query.columns)}"
+    )
+
+locs = dados_query[['lat', 'lon', 'timestamp']].sort_values('timestamp')
+
 
 
 def decision(score):
@@ -338,6 +360,8 @@ elif menu=='IA Análise de Score':
     st.divider()
     
     # Entrada de dados
+
+    
     col_entrada1, col_entrada2 = st.columns([3, 1])
     
     with col_entrada1:
