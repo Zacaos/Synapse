@@ -580,25 +580,25 @@ As decisões são registradas apenas para análise do modelo.
 ✅ O favorecido foi validado por outro canal?
         """)
 
-        st.divider()
+    st.divider()
 
-        st.subheader("🔐 MFA - Validação Reforçada")
+    st.subheader("🔐 MFA - Validação Reforçada")
 
-        mfa = st.checkbox(
+    mfa = st.checkbox(
             "Solicitar MFA"
         )
 
-        if mfa:
+    if mfa:
 
             st.success(
                 "OTP / Biometria Facial solicitados ao usuário."
             )
 
-        st.divider()
+    st.divider()
 
-        st.subheader("⛔ Bloqueio Cautelar")
+    st.subheader("⛔ Bloqueio Cautelar")
 
-        if score > 70:
+    if score > 70:
 
             st.error("""
 Possível tentativa de fraude identificada.
@@ -609,7 +609,7 @@ recomenda-se a aplicação de bloqueio cautelar
 para validação adicional da operação.
             """)
 
-            if st.button(
+    if st.button(
                 "Aplicar Bloqueio Cautelar"
             ):
 
@@ -620,11 +620,11 @@ Prazo máximo de análise:
 24 horas.
                 """)
 
-        st.divider()
+    st.divider()
 
-        st.subheader("🚨 Contestação MED")
+    st.subheader("🚨 Contestação MED")
 
-        if st.button(
+    if st.button(
             "Abrir Contestação MED"
         ):
 
@@ -636,7 +636,7 @@ Prazo máximo de análise:
                 f"Contestação criada: {protocolo}"
             )
 
-        if modo == "Shadow Mode":
+    if modo == "Shadow Mode":
 
             st.info("""
 SHADOW MODE ATIVO
@@ -690,4 +690,3 @@ Ser referência em inteligência antifraude para pagamentos instantâneos, acomp
 
 *Antecipando riscos, fortalecendo a confiança e apoiando o futuro seguro do Pix.* 🚀🔒📊
 """)
-
