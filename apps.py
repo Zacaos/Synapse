@@ -638,9 +638,7 @@ recomenda-se a aplicação de bloqueio cautelar
 para validação adicional da operação.
             """)
 
-    if st.button(
-                "Aplicar Bloqueio Cautelar"
-            ):
+    if st.button("Aplicar Bloqueio Cautelar"):
 
                 st.success("""
 Transação encaminhada para validação.
