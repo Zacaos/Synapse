@@ -595,9 +595,11 @@ for rec in recommendations:
 
 st.divider()
 
-elif menu == "Quem Somos":
 
-    st.title("Quem Somos")
+elif menu == "Quem Somos":
+ 
+
+st.title("Quem Somos")
 
     st.markdown("""
 # Synapse Fraud Prevention
