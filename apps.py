@@ -568,7 +568,7 @@ As decisões são registradas apenas para análise do modelo.
         score
     )
 
-        st.markdown("""
+    st.markdown("""
 ### Perguntas de Segurança
 
 ✅ Você conhece o recebedor?
