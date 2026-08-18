@@ -111,9 +111,10 @@ def gerar_dados():
     df['categoria'] = np.random.choice(
         cats,
         n,
-        p=[0.9,0.04,0.03,0.03]
+        p=[0.9, 0.04, 0.03, 0.03]
     )
 
+    return df
 
 def decision(score):
     """Classifica o risco baseado no score"""
@@ -124,14 +125,6 @@ def decision(score):
     else:
         return 'Baixo Risco'
 
-
-def obter_regiao(lat, lon):
-    """Determina a região baseada em coordenadas"""
-    for regiao, info in REGIOES_BRASIL.items():
-        bounds = info['bounds']
-        if bounds[1][0] <= lat <= bounds[0][0] and bounds[0][1] <= lon <= bounds[1][1]:
-            return regiao
-    return 'Fora do Brasil'
 
 
 def buscar_por_campo(query, campo, df):
@@ -158,24 +151,7 @@ def analisar_comportamento(dados_query, df, tipo_busca):
     pct_apostas = (len(dados_query[dados_query['destination'] == 'Casa de Apostas']) / num_transacoes * 100) if num_transacoes > 0 else 0
     pct_ecommerce = (len(dados_query[dados_query['destination'] == 'E-commerce']) / num_transacoes * 100) if num_transacoes > 0 else 0
     
-    # Análise de localização (Impossible Travel)
-    locs = dados_query[['lat', 'lon', 'timestamp']].sort_values('timestamp')
-    impossible_travel = False
-    travel_warning = ""
-    
-    if len(locs) > 1:
-        for i in range(1, len(locs)):
-            lat1, lon1 = locs.iloc[i-1]['lat'], locs.iloc[i-1]['lon']
-            lat2, lon2 = locs.iloc[i]['lat'], locs.iloc[i]['lon']
-            time_diff = (locs.iloc[i]['timestamp'] - locs.iloc[i-1]['timestamp']).total_seconds() / 3600
-            
-            # Cálculo simples de distância (haversine aproximado)
-            distance = np.sqrt((lat2-lat1)**2 + (lon2-lon1)**2) * 111  # ~111km por grau
-            
-            if time_diff > 0 and distance / time_diff > 800:  # Acima de 800km/h é impossível
-                impossible_travel = True
-                travel_warning = f"⚠️ Viagem impossível detectada: {distance:.0f}km em {time_diff:.1f}horas"
-    
+
     # Score médio e risco
     score_medio = dados_query['score'].mean()
     risco = decision(score_medio)
@@ -194,11 +170,8 @@ def analisar_comportamento(dados_query, df, tipo_busca):
         'pct_ecommerce': pct_ecommerce,
         'score_medio': score_medio,
         'risco': risco,
-        'impossible_travel': impossible_travel,
-        'travel_warning': travel_warning,
         'dados_detalhados': dados_query,
-        'tipo_busca': tipo_busca,
-        'regiao': regiao
+        'tipo_busca': tipo_busca
     }
 
 
@@ -278,47 +251,191 @@ st.sidebar.write(f"Perfil: {st.session_state.perfil}")
 
 
 
-if menu=='Synapse Dashboard':
-    st.title('Synapse Dashboard')
-    c1,c2,c3,c4,c5,c6=st.columns(6)
-if "amount" in DF.columns:
-    c1.metric(
-        "TPV",
-        f"R$ {DF['amount'].sum():,.0f}"
+if menu == "Synapse Dashboard":
+
+    st.title("Synapse Dashboard")
+
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+
+    if "amount" in DF.columns:
+        c1.metric(
+            "TPV",
+            f"R$ {DF['amount'].sum():,.0f}"
+        )
+    else:
+        c1.error(
+            f"Coluna amount não encontrada"
+        )
+
+    c2.metric(
+        "Contas",
+        len(DF)
     )
-else:
-    c1.error(
-        f"Coluna 'amount' não encontrada. Colunas disponíveis: {list(DF.columns)}"
+
+    c3.metric(
+        "Suspeitas",
+        len(
+            DF[
+                DF["categoria"] != "Conta OK"
+            ]
+        )
     )
-    c2.metric('Contas',len(DF))
-    c3.metric('Suspeitas',len(DF[DF.categoria!='Conta OK']))
-    c4.metric('Mule',len(DF[DF.categoria=='Mule Account']))
-    c5.metric('Scammer',len(DF[DF.categoria=='Scammer Account']))
-    c6.metric('Score Médio',round(DF.score.mean(),1))
 
-    tmp=DF.copy(); tmp['dia']=pd.to_datetime(tmp.timestamp).dt.date
-    grp=tmp.groupby(['dia','categoria'])['amount'].sum().reset_index()
-    st.subheader('TPV por Categoria')
-    st.altair_chart(alt.Chart(grp).mark_bar().encode(x='dia:T',y='amount:Q',color='categoria:N'),use_container_width=True)
+    c4.metric(
+        "Mule",
+        len(
+            DF[
+                DF["categoria"] == "Mule Account"
+            ]
+        )
+    )
 
-    linha=tmp.groupby('dia').size().reset_index(name='volume')
-    st.subheader('Volume de Chaves Suspeitas')
-    st.altair_chart(alt.Chart(linha).mark_line(point=True).encode(x='dia:T',y='volume:Q'),use_container_width=True)
+    c5.metric(
+        "Scammer",
+        len(
+            DF[
+                DF["categoria"] == "Scammer Account"
+            ]
+        )
+    )
 
-    donut=DF['categoria'].value_counts().reset_index()
-    donut.columns=['categoria','valor']
-    st.subheader('Distribuição por Categoria')
-    st.altair_chart(alt.Chart(donut).mark_arc(innerRadius=70).encode(theta='valor:Q',color='categoria:N'),use_container_width=True)
+    c6.metric(
+        "Score Médio",
+        round(
+            DF["score"].mean(),
+            1
+        )
+    )
 
-    st.subheader('Transações Monitoradas')
-    st.dataframe(DF.head(100),use_container_width=False);
+    tmp = DF.copy()
 
+    tmp["dia"] = pd.to_datetime(
+        tmp["timestamp"]
+    ).dt.date
+
+    grp = (
+        tmp.groupby(
+            ["dia", "categoria"]
+        )["amount"]
+        .sum()
+        .reset_index()
+    )
+
+    st.subheader(
+        "TPV por Categoria"
+    )
+
+    st.altair_chart(
+        alt.Chart(grp)
+        .mark_bar()
+        .encode(
+            x="dia:T",
+            y="amount:Q",
+            color="categoria:N"
+        ),
+        use_container_width=True
+    )
+
+    linha = (
+        tmp.groupby("dia")
+        .size()
+        .reset_index(name="volume")
+    )
+
+    st.subheader(
+        "Volume de Chaves Suspeitas"
+    )
+
+    st.altair_chart(
+        alt.Chart(linha)
+        .mark_line(point=True)
+        .encode(
+            x="dia:T",
+            y="volume:Q"
+        ),
+        use_container_width=True
+    )
+
+    donut = (
+        DF["categoria"]
+        .value_counts()
+        .reset_index()
+    )
+
+    donut.columns = [
+        "categoria",
+        "valor"
+    ]
+
+    st.subheader(
+        "Distribuição por Categoria"
+    )
+
+    st.altair_chart(
+        alt.Chart(donut)
+        .mark_arc(
+            innerRadius=70
+        )
+        .encode(
+            theta="valor:Q",
+            color="categoria:N"
+        ),
+        use_container_width=True
+    )
+
+    st.subheader(
+        "Transações Monitoradas"
+    )
+
+    st.dataframe(
+        DF.head(100),
+        use_container_width=True
+    );
         
-elif menu == "IA Análise de Score"
+elif menu == "IA Análise de Score":
 
-recomendacoes = []
+    st.title("🧠 IA Análise de Score")
 
-        if not destino_conhecido:
+    destino_conhecido = st.checkbox(
+        "Destinatário conhecido"
+    )
+
+    valor = st.number_input(
+        "Valor Transação",
+        value=1000.0
+    )
+
+    media_7dias = st.number_input(
+        "Média Últimos 7 Dias",
+        value=500.0
+    )
+
+    novo_dispositivo = st.checkbox(
+        "Novo dispositivo"
+    )
+
+    dict_flag = st.checkbox(
+        "Flag de risco"
+    )
+
+    score = st.slider(
+        "Score",
+        0,
+        100,
+        75
+    )
+
+    modo = st.selectbox(
+        "Modo",
+        [
+            "Produção",
+            "Shadow Mode"
+        ]
+    )
+
+    recomendacoes = []        
+    
+    if not destino_conhecido:
             recomendacoes.append(
                 "Destinatário não identificado no histórico do cliente."
             )
