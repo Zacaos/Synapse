@@ -391,7 +391,9 @@ if menu == "Synapse Dashboard":
         DF.head(100),
         use_container_width=True
     );
-        elif menu == "IA Análise de Score":
+        
+
+elif menu == "IA Análise de Score":
 
     st.title("🧠 IA Análise de Score")
 
