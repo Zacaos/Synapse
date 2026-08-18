@@ -558,32 +558,6 @@ if st.button("Consultar Chave Pix"):
 ✅ O favorecido foi validado por outro canal?
 """)
 
-    
-    st.divider()
-
-    st.subheader("⛔ Bloqueio Cautelar")
-
-    if score > 70:
-
-        st.error("""
-Possível tentativa de fraude identificada.
-
-Conforme políticas internas de prevenção à fraude
-e mecanismos de monitoramento transacional,
-recomenda-se a aplicação de bloqueio cautelar
-para validação adicional da operação.
-""")
-
-        if st.button(
-            "Aplicar Bloqueio Cautelar"
-        ):
-            st.success("""
-Transação encaminhada para validação.
-
-Prazo máximo de análise:
-24 horas.
-""")
-
     st.divider()
 
     st.subheader("🚨 Contestação MED")
