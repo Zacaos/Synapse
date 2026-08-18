@@ -547,7 +547,7 @@ for rec in recommendations:
 
     st.info(rec)
 
-   st.divider();
+   st.divider()
     
     recomendacoes = []
 
