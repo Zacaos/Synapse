@@ -395,10 +395,10 @@ if menu == "Synapse Dashboard":
 
 elif menu == "IA Análise de Score":
 
-st.title("🧠 IA Análise de Score")
+    st.title("🧠 IA Análise de Score")
 
 
-st.subheader("🔍 Consulta por Chave Pix")
+    st.subheader("🔍 Consulta por Chave Pix")
 
 chave_pix = st.text_input(
     "Informe a chave Pix",
