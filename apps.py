@@ -395,7 +395,61 @@ if menu == "Synapse Dashboard":
 
 elif menu == "IA Análise de Score":
 
-    st.title("🧠 IA Análise de Score")
+st.title("🧠 IA Análise de Score")
+
+
+st.subheader("🔍 Consulta por Chave Pix")
+
+chave_pix = st.text_input(
+    "Informe a chave Pix",
+    placeholder="cliente123@mail.com"
+)
+
+if st.button("Consultar Chave Pix"):
+
+    resultado = DF[
+        DF["pix_key"].astype(str)
+        .str.lower()
+        ==
+        chave_pix.strip().lower()
+    ]
+
+    if len(resultado) > 0:
+
+        st.success("Chave localizada")
+
+        registro = resultado.iloc[0]
+
+        c1, c2, c3 = st.columns(3)
+
+        with c1:
+            st.metric(
+                "Score",
+                int(registro["score"])
+            )
+
+        with c2:
+            st.metric(
+                "Valor",
+                f"R$ {registro['amount']:,.2f}"
+            )
+
+        with c3:
+            st.metric(
+                "Categoria",
+                registro["categoria"]
+            )
+
+        st.dataframe(
+            resultado,
+            use_container_width=True
+        )
+
+    else:
+
+        st.error(
+            "Chave Pix não localizada."
+        )    
 
     destino_conhecido = st.checkbox(
         "Destinatário conhecido"
