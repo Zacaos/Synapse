@@ -281,7 +281,15 @@ st.sidebar.write(f"Perfil: {st.session_state.perfil}")
 if menu=='Synapse Dashboard':
     st.title('Synapse Dashboard')
     c1,c2,c3,c4,c5,c6=st.columns(6)
-    c1.metric('TPV',f"R$ {DF.amount.sum():,.0f}")
+if "amount" in DF.columns:
+    c1.metric(
+        "TPV",
+        f"R$ {DF['amount'].sum():,.0f}"
+    )
+else:
+    c1.error(
+        f"Coluna 'amount' não encontrada. Colunas disponíveis: {list(DF.columns)}"
+    )
     c2.metric('Contas',len(DF))
     c3.metric('Suspeitas',len(DF[DF.categoria!='Conta OK']))
     c4.metric('Mule',len(DF[DF.categoria=='Mule Account']))
