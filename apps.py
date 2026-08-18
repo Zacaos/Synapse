@@ -538,19 +538,7 @@ if st.button("Consultar Chave Pix"):
 ✅ O favorecido foi validado por outro canal?
 """)
 
-    st.divider()
-
-    st.subheader("🔐 MFA - Validação Reforçada")
-
-    mfa = st.checkbox(
-        "Solicitar MFA"
-    )
-
-    if mfa:
-        st.success(
-            "OTP / Biometria Facial solicitados ao usuário."
-        )
-
+    
     st.divider()
 
     st.subheader("⛔ Bloqueio Cautelar")
@@ -634,20 +622,7 @@ As decisões são registradas apenas para análise do modelo.
 ✅ O favorecido foi validado por outro canal?
         """)
 
-    st.divider()
-
-    st.subheader("🔐 MFA - Validação Reforçada")
-
-    mfa = st.checkbox(
-            "Solicitar MFA"
-        )
-
-    if mfa:
-
-            st.success(
-                "OTP / Biometria Facial solicitados ao usuário."
-            )
-
+    
     st.divider()
 
     st.subheader("⛔ Bloqueio Cautelar")
