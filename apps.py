@@ -593,6 +593,7 @@ for rec in recommendations:
 ✅ O favorecido foi validado por outro canal?
 """)
 
+st.divider()
 
 elif menu == "Quem Somos":
 
