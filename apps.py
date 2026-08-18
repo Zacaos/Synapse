@@ -314,7 +314,7 @@ else:
     st.dataframe(DF.head(100),use_container_width=False);
 
         
-else menu == "IA Análise de Score"
+elif menu == "IA Análise de Score"
 
 recomendacoes = []
 
