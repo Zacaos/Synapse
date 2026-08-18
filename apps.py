@@ -313,6 +313,113 @@ else:
     st.subheader('Transações Monitoradas')
     st.dataframe(DF.head(100),use_container_width=False);
 
+        
+else menu == "IA Análise de Score"
+
+recomendacoes = []
+
+        if not destino_conhecido:
+            recomendacoes.append(
+                "Destinatário não identificado no histórico do cliente."
+            )
+
+        if valor > media_7dias:
+            recomendacoes.append(
+                "Valor superior ao padrão transacional recente."
+            )
+
+        if novo_dispositivo:
+            recomendacoes.append(
+                "Novo dispositivo detectado."
+            )
+
+        if dict_flag:
+            recomendacoes.append(
+                "Existem marcadores de risco associados ao ecossistema Pix."
+            )
+
+        for item in recomendacoes:
+            st.info(item)
+
+        st.markdown("""
+### Perguntas de Segurança
+
+✅ Você conhece o recebedor?
+
+✅ O pagamento foi solicitado por telefone?
+
+✅ Existe urgência para realizar esta transferência?
+
+✅ O favorecido foi validado por outro canal?
+        """)
+
+        st.divider()
+
+        st.subheader("🔐 MFA - Validação Reforçada")
+
+        mfa = st.checkbox(
+            "Solicitar MFA"
+        )
+
+        if mfa:
+
+            st.success(
+                "OTP / Biometria Facial solicitados ao usuário."
+            )
+
+        st.divider()
+
+        st.subheader("⛔ Bloqueio Cautelar")
+
+        if score > 70:
+
+            st.error("""
+Possível tentativa de fraude identificada.
+
+Conforme políticas internas de prevenção à fraude
+e mecanismos de monitoramento transacional,
+recomenda-se a aplicação de bloqueio cautelar
+para validação adicional da operação.
+            """)
+
+            if st.button(
+                "Aplicar Bloqueio Cautelar"
+            ):
+
+                st.success("""
+Transação encaminhada para validação.
+
+Prazo máximo de análise:
+24 horas.
+                """)
+
+        st.divider()
+
+        st.subheader("🚨 Contestação MED")
+
+        if st.button(
+            "Abrir Contestação MED"
+        ):
+
+            protocolo = (
+                f"MED-{datetime.now().strftime('%Y%m%d%H%M%S')}"
+            )
+
+            st.success(
+                f"Contestação criada: {protocolo}"
+            )
+
+        if modo == "Shadow Mode":
+
+            st.info("""
+SHADOW MODE ATIVO
+
+O score foi calculado normalmente.
+
+Nenhuma ação operacional será aplicada.
+
+As decisões são registradas apenas para análise do modelo.
+            """)
 
 
 
