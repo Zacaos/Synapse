@@ -185,7 +185,7 @@ div.stButton > button {
 </style>
 """, unsafe_allow_html=True)
 
-m1, m2, m3 = st.columns(3)
+m1, m2, m3, m4 = st.columns(4)
 
 if "menu" not in st.session_state:
     st.session_state.menu = "Dashboard"
@@ -214,8 +214,16 @@ with m3:
         "ℹ️ Quem Somos",
         use_container_width=True
     ):
-
         st.session_state.menu = "Quem Somos"
+
+with m4:
+
+    if st.button(
+        "📖 Ajuda",
+        use_container_width=True
+    ):
+
+        st.session_state.menu = "Ajuda"        
 
 menu = st.session_state.menu
 
@@ -314,7 +322,7 @@ if menu == "Dashboard":
         ),
         use_container_width=True
     )
-    
+
     donut=DF['categoria'].value_counts().reset_index()
     donut.columns=['categoria','valor']
     st.subheader('Distribuição por Categoria')
@@ -334,9 +342,7 @@ if menu == "Dashboard":
 
 elif menu == "IA":
 
-    st.subheader(
-        "🧠 IA Análise de Score"
-    )
+    st.subheader("🧠 IA Análise de Score")
 
     tipo = st.selectbox(
         "Tipo de Consulta",
@@ -368,15 +374,11 @@ elif menu == "IA":
 
             mapa = {
 
-                "CPF":"cpf",
-
-                "Documento":"documento",
-
-                "Telefone":"telefone",
-
-                "E-mail":"email",
-
-                "Chave Pix":"pix_key"
+                "CPF": "cpf",
+                "Documento": "documento",
+                "Telefone": "telefone",
+                "E-mail": "email",
+                "Chave Pix": "pix_key"
             }
 
             campo = mapa[tipo]
@@ -400,14 +402,19 @@ elif menu == "IA":
         else:
 
             st.error(
-                "Registro não encontrado."
+                "❌ Registro não encontrado"
             )
+
+    # ==========================================
+    # RESULTADO
+    # ==========================================
 
     if "registro" in st.session_state:
 
         registro = st.session_state["registro"]
 
         score = int(registro["score"])
+
         valor_transacao = float(
             registro["amount"]
         )
@@ -415,10 +422,10 @@ elif menu == "IA":
         categoria = registro["categoria"]
 
         st.success(
-            "✅ Identificador localizado."
+            "✅ Registro localizado"
         )
 
-        c1,c2,c3 = st.columns(3)
+        c1, c2, c3 = st.columns(3)
 
         c1.metric(
             "Score",
@@ -435,6 +442,34 @@ elif menu == "IA":
             categoria
         )
 
+        # ==========================================
+        # RISK LEVEL
+        # ==========================================
+
+        st.subheader("🎯 Risk Level")
+
+        if score < 50:
+
+            st.success(
+                "🟢 BAIXO RISCO"
+            )
+
+        elif score < 80:
+
+            st.warning(
+                "🟡 MÉDIO RISCO"
+            )
+
+        else:
+
+            st.error(
+                "🔴 ALTO RISCO"
+            )
+
+        # ==========================================
+        # AGENTE IA
+        # ==========================================
+
         st.divider()
 
         st.subheader(
@@ -443,6 +478,12 @@ elif menu == "IA":
 
         recomendacoes = []
 
+        
+
+
+        
+        
+        
         if score >= 80:
 
             recomendacoes.append(
@@ -479,25 +520,29 @@ elif menu == "IA":
 
         st.divider()
 
+        # ==========================================
+        # DECISÃO
+        # ==========================================
+
         if score < 50:
 
             st.success(
-                "APPROVE"
+                "✅ APPROVE"
             )
 
         elif score < 80:
 
             st.warning(
-                "MFA RECOMENDADO"
+                "🔐 MFA RECOMENDADO"
             )
 
         else:
 
             st.error(
-                "BLOQUEIO CAUTELAR RECOMENDADO"
+                "⛔ BLOQUEIO CAUTELAR RECOMENDADO"
             )
 
-        col1,col2,col3 = st.columns(3)
+        col1, col2, col3 = st.columns(3)
 
         with col1:
 
@@ -520,7 +565,7 @@ elif menu == "IA":
                 )
 
                 st.success(
-                    protocolo
+                    f"Bloqueio registrado: {protocolo}"
                 )
 
         with col3:
@@ -534,12 +579,195 @@ elif menu == "IA":
                 )
 
                 st.success(
-                    protocolo
+                    f"Contestação criada: {protocolo}"
                 )
 
 # ==================================================
 # QUEM SOMOS
 # ==================================================
+
+# ==================================================
+# AJUDA
+# ==================================================
+
+elif menu == "Ajuda":
+
+    st.title("📖 Guia de Utilização")
+
+    st.markdown("""
+# Synapse Fraud Prevention
+
+Esta funcionalidade permite testar a análise de risco utilizando dados simulados gerados para demonstração do MVP.
+
+---
+
+## 🔍 Tipos de Consulta
+
+O sistema permite pesquisas utilizando:
+
+### CPF
+
+Exemplos:
+
+10000000000
+
+10000000001
+
+10000000002
+
+---
+
+### Documento
+
+Exemplos:
+
+RG10000000
+
+RG10000001
+
+RG10000002
+
+---
+
+### Telefone
+
+Exemplos:
+
+1191000000
+
+1191000001
+
+1191000002
+
+---
+
+### E-mail
+
+Exemplos:
+
+usuario0@email.com
+
+usuario1@email.com
+
+usuario2@email.com
+
+---
+
+### Chave Pix
+
+Exemplos:
+
+cliente0@mail.com
+
+cliente1@mail.com
+
+cliente2@mail.com
+
+---
+
+### Consulta Aleatória
+
+Seleciona automaticamente um registro da base simulada.
+
+---
+
+## 🤖 Resultado da Análise
+
+Após a consulta o sistema exibe:
+
+- Score
+- Valor da operação
+- Categoria
+- Risk Level
+- Recomendações da IA
+
+---
+
+## 🎯 Risk Level
+
+### 🟢 Baixo Risco
+
+Score entre:
+
+1 e 49
+
+Ação sugerida:
+
+✅ APPROVE
+
+---
+
+### 🟡 Médio Risco
+
+Score entre:
+
+50 e 79
+
+Ação sugerida:
+
+🔐 MFA
+
+---
+
+### 🔴 Alto Risco
+
+Score entre:
+
+80 e 99
+
+Ação sugerida:
+
+⛔ Bloqueio Cautelar
+
+---
+
+## 🤖 Agente IA
+
+O agente avalia:
+
+- Score
+- Categoria
+- Valor da transação
+
+E gera recomendações automáticas para apoio à tomada de decisão.
+
+---
+
+## 🔐 MFA
+
+MFA (Multi-Factor Authentication)
+
+Pode representar:
+
+- OTP
+- Token
+- Biometria
+- Push Notification
+
+---
+
+## ⛔ Bloqueio Cautelar
+
+Permite reter a operação para validação adicional em situações de risco elevado.
+
+---
+
+## 🚨 Contestação MED
+
+O sistema permite simular a abertura de uma contestação MED.
+
+Exemplo:
+
+MED-20260822153000
+
+---
+
+## ⚠️ Importante
+
+Todos os dados exibidos foram gerados artificialmente para fins acadêmicos e demonstração do MVP da Synapse Fraud Prevention.
+""")
+
+
 
 elif menu == "Quem Somos":
 
