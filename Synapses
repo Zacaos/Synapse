@@ -1,0 +1,587 @@
+import streamlit as st
+import pandas as pd
+import numpy as np
+import plotly.express as px
+import plotly.graph_objects as go
+from datetime import datetime, timedelta
+
+# ==============================================================================
+# 1. CONFIGURAÇÃO DA PÁGINA E ESTILIZAÇÃO CSS (DARK MODE + GRADIENTE BRASIL)
+# ==============================================================================
+st.set_page_config(
+    page_title="Synapse Fraud Prevention | Backtest & Risk Engine",
+    page_icon="🛡️",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+st.markdown("""
+<style>
+    .stApp {
+        background-color: #06090F;
+        color: #E2E8F0;
+    }
+    [data-testid="stSidebar"] {
+        background-color: #0B111E;
+        border-right: 1px solid #1E293B;
+    }
+    .synapse-header {
+        background: linear-gradient(90deg, #004E92 0%, #00A859 55%, #00E676 100%);
+        padding: 1.5rem 2rem;
+        border-radius: 14px;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 8px 32px rgba(0, 230, 118, 0.15);
+    }
+    .synapse-header h1 {
+        color: #FFFFFF !important;
+        margin: 0;
+        font-size: 2rem;
+        font-weight: 800;
+        letter-spacing: -0.5px;
+    }
+    .synapse-header p {
+        color: #E8F5E9 !important;
+        margin: 0.3rem 0 0 0;
+        font-size: 0.95rem;
+        font-weight: 500;
+    }
+    .kpi-card {
+        background: linear-gradient(145deg, #0F172A, #131D31);
+        border: 1px solid #1E293B;
+        border-left: 5px solid #00E676;
+        border-radius: 12px;
+        padding: 1.1rem 1.2rem;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.4);
+        margin-bottom: 1rem;
+    }
+    .kpi-card-blue { border-left: 5px solid #0072FF; }
+    .kpi-card-danger { border-left: 5px solid #FF3D71; }
+    .kpi-card-warning { border-left: 5px solid #FFAA00; }
+    .kpi-title {
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        color: #94A3B8;
+        margin-bottom: 0.3rem;
+        font-weight: 600;
+    }
+    .kpi-value {
+        font-size: 1.55rem;
+        font-weight: 800;
+        color: #F8FAFC;
+    }
+    .kpi-sub {
+        font-size: 0.75rem;
+        color: #00E676;
+        margin-top: 0.25rem;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# ==============================================================================
+# 2. TABELAS DE REFERÊNCIA: BACEN, REGIÃO FISCAL CPF x DDD, BINs
+# ==============================================================================
+CPF_REGION_DDD_MAP = {
+    1: [61, 62, 64, 65, 66, 67, 63],
+    2: [91, 93, 94, 92, 97, 68, 96, 69, 95],
+    3: [85, 88, 98, 99, 86, 89],
+    4: [81, 87, 84, 83, 82],
+    5: [71, 73, 74, 75, 77, 79],
+    6: [31, 32, 33, 34, 35, 37, 38],
+    7: [21, 22, 24, 27, 28],
+    8: [11, 12, 13, 14, 15, 16, 17, 18, 19],
+    9: [41, 42, 43, 44, 45, 46, 47, 48, 49],
+    0: [51, 53, 54, 55]
+}
+
+HIGH_RISK_BINS = ["411111", "555555", "400012", "520082"]
+
+def check_cpf_ddd_match(cpf_str: str, ddd: int) -> bool:
+    digits = ''.join(filter(str.isdigit, str(cpf_str)))
+    if len(digits) < 11:
+        return False
+    ninth_digit = int(digits[8])
+    expected_ddds = CPF_REGION_DDD_MAP.get(ninth_digit, [])
+    return int(ddd) in expected_ddds
+
+# ==============================================================================
+# 3. GERADOR DE PAYLOAD REALISTA (SWAGGER PIX BACEN + CARTÃO + TELEMETRIA)
+# ==============================================================================
+@st.cache_data
+def generate_sample_payload(n_rows=300):
+    np.random.seed(42)
+    base_time = datetime.now() - timedelta(days=5)
+    
+    ispbs = [
+        ("00000000", "Banco do Brasil"),
+        ("60701190", "Itaú Unibanco"),
+        ("18236120", "Nu Pagamentos"),
+        ("90400888", "Banco Santander"),
+        ("60746948", "Bradesco"),
+        ("00360305", "Caixa Econômica")
+    ]
+    
+    cpfs_pool = [
+        "39481204812", "10928374890", "84726193844", "55829103721",
+        "19283746519", "73645182601", "66473829104", "44920183855",
+        "91827364822", "30291847811", "22019283340", "51920384710"
+    ]
+    
+    rows = []
+    for i in range(n_rows):
+        tx_time = base_time + timedelta(minutes=int(np.random.randint(1, 7200)))
+        orig_ispb, orig_bank = ispbs[np.random.randint(0, len(ispbs))]
+        dest_ispb, dest_bank = ispbs[np.random.randint(0, len(ispbs))]
+        
+        origin_cpf = np.random.choice(cpfs_pool)
+        if np.random.rand() < 0.35:
+            dest_cpf = origin_cpf
+        else:
+            dest_cpf = f"{np.random.randint(100000000, 999999999)}{np.random.randint(10, 99)}"
+            
+        payment_method = np.random.choice(["PIX", "CREDIT_CARD"], p=[0.78, 0.22])
+        val_choice = np.random.choice(["low", "mid", "high"], p=[0.45, 0.30, 0.25])
+        
+        if val_choice == "low":
+            valor = round(np.random.uniform(25.0, 490.0), 2)
+        elif val_choice == "mid":
+            valor = round(np.random.uniform(501.0, 995.0), 2)
+        else:
+            valor = round(np.random.uniform(1005.0, 6500.0), 2)
+            
+        e2e_id = f"E{orig_ispb}{tx_time.strftime('%Y%m%d%H%M')}{10000000000 + i}"
+        
+        ninth_digit = int(origin_cpf[8])
+        valid_ddds = CPF_REGION_DDD_MAP.get(ninth_digit, [11])
+        ddd = np.random.choice(valid_ddds) if np.random.rand() < 0.72 else np.random.choice([11, 21, 85, 92, 61, 41])
+        
+        card_bin = "N/A" if payment_method == "PIX" else np.random.choice(["411111", "543210", "555555", "453211", "400012"])
+        recorrencia_24h = int(np.random.choice([1, 2, 3, 4, 6, 8], p=[0.50, 0.20, 0.12, 0.08, 0.06, 0.04]))
+        geo_dist_km = round(np.random.choice([2.5, 12.0, 45.0, 380.0, 1250.0], p=[0.55, 0.20, 0.10, 0.08, 0.07]), 1)
+        device_trust = np.random.choice(["Trusted", "New_Device", "Emulator_Root", "VPN_Proxy"], p=[0.68, 0.18, 0.07, 0.07])
+        
+        rows.append({
+            "endToEndId": e2e_id,
+            "timestamp": tx_time.strftime("%Y-%m-%d %H:%M:%S"),
+            "paymentMethod": payment_method,
+            "valor": valor,
+            "originDocumentNumber": origin_cpf,
+            "destinationDocumentNumber": dest_cpf,
+            "originISPB": orig_ispb,
+            "originBank": orig_bank,
+            "destinationISPB": dest_ispb,
+            "destinationBank": dest_bank,
+            "campoLivre": np.random.choice(["Transferencia Pix", "QrCode Dinamico", "Compra E-commerce", "Fornecedor"]),
+            "accountDDD": ddd,
+            "cardBIN": card_bin,
+            "txCount24h": recorrencia_24h,
+            "geoDistanceKm": geo_dist_km,
+            "deviceStatus": device_trust
+        })
+    return pd.DataFrame(rows)
+
+# ==============================================================================
+# 4. MOTOR DE RISCO (SCORE 0 A 99)
+# ==============================================================================
+def run_synapse_backtest(
+    df: pd.DataFrame,
+    w_diff_doc_500: int = 35,
+    w_recurrence_1000: int = 30,
+    w_cpf_ddd_mismatch: int = 15,
+    w_device_geo: int = 20,
+    w_card_bin: int = 25,
+    th_approve: int = 30,
+    th_manual: int = 60,
+    th_cautelar: int = 80
+) -> pd.DataFrame:
+    df_out = df.copy()
+    scores, decisions, reasons_list, same_holder_flags, cpf_ddd_flags = [], [], [], [], []
+    
+    for _, row in df_out.iterrows():
+        score = 0
+        reasons = []
+        
+        orig_doc = str(row.get("originDocumentNumber", "")).strip()
+        dest_doc = str(row.get("destinationDocumentNumber", "")).strip()
+        valor = float(row.get("valor", 0.0))
+        tx_24h = int(row.get("txCount24h", 1))
+        ddd = int(row.get("accountDDD", 11))
+        method = str(row.get("paymentMethod", "PIX"))
+        card_bin = str(row.get("cardBIN", "N/A"))
+        geo_km = float(row.get("geoDistanceKm", 0.0))
+        device = str(row.get("deviceStatus", "Trusted"))
+        
+        is_same_holder = (orig_doc == dest_doc) and (orig_doc != "")
+        same_holder_flags.append(is_same_holder)
+        
+        cpf_ddd_ok = check_cpf_ddd_match(orig_doc, ddd)
+        cpf_ddd_flags.append("Compatível" if cpf_ddd_ok else "Divergente")
+        
+        if is_same_holder and method == "PIX":
+            score = 5
+            reasons.append("Mesma Titularidade (Pix Seguro)")
+        else:
+            if valor > 500:
+                score += w_diff_doc_500
+                reasons.append(f"Titularidade Distinta + Valor > R$ 500 (+{w_diff_doc_500} pts)")
+            else:
+                score += 10
+                
+            if valor > 1000 and tx_24h >= 3:
+                score += w_recurrence_1000
+                reasons.append(f"Valor > R$ 1k c/ Recorrência ({tx_24h}x) (+{w_recurrence_1000} pts)")
+                
+            if not cpf_ddd_ok:
+                score += w_cpf_ddd_mismatch
+                reasons.append(f"Divergência DDD ({ddd}) vs Região Fiscal CPF (+{w_cpf_ddd_mismatch} pts)")
+                
+            if device in ["Emulator_Root", "VPN_Proxy"] or geo_km > 300:
+                score += w_device_geo
+                reasons.append(f"Anomalia Device ({device}) / Geo ({geo_km}km) (+{w_device_geo} pts)")
+            elif device == "New_Device":
+                score += int(w_device_geo * 0.5)
+                reasons.append(f"Novo Dispositivo Detectado (+{int(w_device_geo * 0.5)} pts)")
+                
+            if method == "CREDIT_CARD" and card_bin in HIGH_RISK_BINS:
+                score += w_card_bin
+                reasons.append(f"BIN de Cartão em Lista Restritiva ({card_bin}) (+{w_card_bin} pts)")
+                
+        # Garantir score entre 0 e 99 (conforme solicitado)
+        score = min(99, max(0, int(score)))
+        
+        if is_same_holder and method == "PIX" and device == "Trusted":
+            decision = "APROVADO"
+        elif valor > 1000 and tx_24h >= 3 and score < th_cautelar:
+            decision = "REVISÃO MANUAL"
+        elif score <= th_approve:
+            decision = "APROVADO"
+        elif score <= th_manual:
+            decision = "REVISÃO MANUAL"
+        elif score < th_cautelar:
+            decision = "BLOQUEIO CAUTELAR (72h)"
+        else:
+            decision = "REPROVADO / FRAUDE"
+            
+        if not reasons:
+            reasons.append("Comportamento Normal")
+            
+        scores.append(score)
+        decisions.append(decision)
+        reasons_list.append(" | ".join(reasons))
+        
+    df_out["sameHolder"] = same_holder_flags
+    df_out["cpfDddStatus"] = cpf_ddd_flags
+    df_out["riskScore"] = scores
+    df_out["recommendedAction"] = decisions
+    df_out["aiReasoning"] = reasons_list
+    return df_out
+
+# ==============================================================================
+# 5. SIDEBAR: MENU DE NAVEGAÇÃO, PERFIL & CONFIGURAÇÕES
+# ==============================================================================
+with st.sidebar:
+    st.markdown("## 🛡️ Synapse Controls")
+    
+    # Sessão Ativa por Perfil de Usuário
+    user_profile = st.selectbox("👤 Perfil de Usuário Ativo", ["Admin (Risco & Compliance)", "Analista de Fraude"])
+    st.caption(f"Sessão ativa: **{user_profile}**")
+    st.divider()
+    
+    # Menu de Navegação Principal
+    menu_opcao = st.radio(
+        "📂 Navegação",
+        [
+            "Home (Análise Estratégica)",
+            "Agente Antifraude (IA Insights)",
+            "Backtest de Cenários (Shadow Mode)",
+            "Documentação, Ajuda & POP (Bacen / MED)",
+            "Central de Alertas"
+        ]
+    )
+    
+    st.divider()
+    uploaded_file = st.file_uploader("📂 Subir CSV (Payload Pix / Cartão)", type=["csv"])
+    
+    # Parâmetros calibráveis de risco
+    with st.expander("⚙️ Calibragem de Pesos (Admin)", expanded=False):
+        w_diff_500 = st.slider("Titularidade Distinta > R$ 500", 10, 60, 35)
+        w_rec_1000 = st.slider("Recorrência 24h > R$ 1.000", 10, 50, 30)
+        w_cpf_ddd = st.slider("Divergência DDD vs CPF", 5, 40, 15)
+        w_dev_geo = st.slider("Risco Device / Geo", 5, 40, 20)
+        w_bin = st.slider("Risco BIN Cartão", 5, 40, 25)
+        
+        th_app = st.slider("Corte Máx. Aprovação", 10, 50, 30)
+        th_man = st.slider("Corte Máx. Revisão Manual", 40, 75, 60)
+        th_caut = st.slider("Corte Máx. Bloqueio Cautelar", 65, 95, 80)
+    
+    # Valores padrão caso o painel avançado esteja recolhido
+    if 'w_diff_500' not in locals():
+        w_diff_500, w_rec_1000, w_cpf_ddd, w_dev_geo, w_bin = 35, 30, 15, 20, 25
+        th_app, th_man, th_caut = 30, 60, 80
+
+# Carregamento e Processamento dos Dados
+raw_df = pd.read_csv(uploaded_file) if uploaded_file is not None else generate_sample_payload(300)
+processed_df = run_synapse_backtest(
+    raw_df, w_diff_500, w_rec_1000, w_cpf_ddd, w_dev_geo, w_bin, th_app, th_man, th_caut
+)
+processed_df["timestamp_dt"] = pd.to_datetime(processed_df["timestamp"])
+
+# ==============================================================================
+# 6. PÁGINA 1: HOME / ANÁLISE ESTRATÉGICA
+# ==============================================================================
+if menu_opcao == "Home (Análise Estratégica)":
+    st.markdown("""
+    <div class="synapse-header">
+        <h1>⚡ SYNAPSE FRAUD PREVENTION • HOME</h1>
+        <p>Visão Executiva & Estratégica • Pix Instantâneo (SPI/Swagger Bacen) & Cartão (BIN)</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    # Filtros e Filas no Slice
+    with st.expander("🔍 Filtros e Filas de Investigação (Slice)", expanded=True):
+        f1, f2, f3, f4 = st.columns(4)
+        min_d, max_d = processed_df["timestamp_dt"].min().date(), processed_df["timestamp_dt"].max().date()
+        
+        with f1:
+            date_range = st.date_input("Período", value=(min_d, max_d))
+        with f2:
+            methods = st.multiselect("Meio", options=processed_df["paymentMethod"].unique(), default=list(processed_df["paymentMethod"].unique()))
+        with f3:
+            banks = st.multiselect("Banco Origem", options=processed_df["originBank"].unique(), default=list(processed_df["originBank"].unique()))
+        with f4:
+            actions = st.multiselect("Status", options=processed_df["recommendedAction"].unique(), default=list(processed_df["recommendedAction"].unique()))
+
+    df_f = processed_df.copy()
+    if isinstance(date_range, tuple) and len(date_range) == 2:
+        df_f = df_f[(df_f["timestamp_dt"].dt.date >= date_range[0]) & (df_f["timestamp_dt"].dt.date <= date_range[1])]
+    df_f = df_f[(df_f["paymentMethod"].isin(methods)) & (df_f["originBank"].isin(banks)) & (df_f["recommendedAction"].isin(actions))]
+
+    # Big Numbers no Topo
+    tot_tx = len(df_f)
+    tot_val = df_f["valor"].sum()
+    df_aprov = df_f[df_f["recommendedAction"] == "APROVADO"]
+    df_bloq = df_f[df_f["recommendedAction"].isin(["REPROVADO / FRAUDE", "BLOQUEIO CAUTELAR (72h)"])]
+    df_rev = df_f[df_f["recommendedAction"] == "REVISÃO MANUAL"]
+    
+    score_medio = df_f["riskScore"].mean() if tot_tx > 0 else 0.0
+
+    k1, k2, k3, k4, k5 = st.columns(5)
+    with k1:
+        st.markdown(f'<div class="kpi-card kpi-card-blue"><div class="kpi-title">Transações</div><div class="kpi-value">{tot_tx:,}</div><div class="kpi-sub">Volume Fila Slice</div></div>', unsafe_allow_html=True)
+    with k2:
+        st.markdown(f'<div class="kpi-card"><div class="kpi-title">Valor Total</div><div class="kpi-value">R$ {tot_val:,.2f}</div><div class="kpi-sub">Transacionado</div></div>', unsafe_allow_html=True)
+    with k3:
+        st.markdown(f'<div class="kpi-card"><div class="kpi-title">Aprovados</div><div class="kpi-value">R$ {df_aprov["valor"].sum():,.2f}</div><div class="kpi-sub">{len(df_aprov)} Aprovados</div></div>', unsafe_allow_html=True)
+    with k4:
+        st.markdown(f'<div class="kpi-card kpi-card-danger"><div class="kpi-title">Fraudes / Cautelar</div><div class="kpi-value">R$ {df_bloq["valor"].sum():,.2f}</div><div class="kpi-sub" style="color:#FF3D71;">{len(df_bloq)} Retidos</div></div>', unsafe_allow_html=True)
+    with k5:
+        st.markdown(f'<div class="kpi-card kpi-card-warning"><div class="kpi-title">Score Médio</div><div class="kpi-value">{score_medio:.1f} / 99</div><div class="kpi-sub">Risco Global</div></div>', unsafe_allow_html=True)
+
+    # Gráficos Principais
+    c1, c2 = st.columns(2)
+    with c1:
+        st.markdown("#### 📊 Distribuição de Decisões (Volume R$)")
+        color_map = {"APROVADO": "#00E676", "REVISÃO MANUAL": "#FFAA00", "BLOQUEIO CAUTELAR (72h)": "#00B0FF", "REPROVADO / FRAUDE": "#FF3D71"}
+        if not df_f.empty:
+            fig_pie = px.pie(df_f, names="recommendedAction", values="valor", hole=0.6, color="recommendedAction", color_discrete_map=color_map)
+            fig_pie.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#E2E8F0", margin=dict(t=10, b=10, l=10, r=10))
+            st.plotly_chart(fig_pie, use_container_width=True)
+            
+    with c2:
+        st.markdown("#### 🏦 Volume por Banco de Origem")
+        if not df_f.empty:
+            b_grp = df_f.groupby("originBank", as_index=False)["valor"].sum()
+            fig_bar = px.bar(b_grp, x="originBank", y="valor", color="originBank", color_discrete_sequence=px.colors.qualitative.Prism)
+            fig_bar.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#E2E8F0", showlegend=False, margin=dict(t=10, b=10, l=10, r=10))
+            st.plotly_chart(fig_bar, use_container_width=True)
+
+# ==============================================================================
+# 7. PÁGINA 2: AGENTE ANTIFRAUDE (IA INSIGHTS + CHATBOT INTEGRADO)
+# ==============================================================================
+elif menu_opcao == "Agente Antifraude (IA Insights)":
+    st.markdown("""
+    <div class="synapse-header">
+        <h1>🤖 AGENTE ANTIFRAUDE • IA INSIGHTS & COPILOT</h1>
+        <p>Análise Transacional Individualizada por Score (0 a 99) • Explicação de Features & Chatbot Integrado</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    selected_e2e = st.selectbox(
+        "Selecione o endToEndId da transação para inspeção detalhada pelo Agente IA:",
+        options=processed_df.sort_values(by="riskScore", ascending=False)["endToEndId"].unique()
+    )
+    
+    tx_row = processed_df[processed_df["endToEndId"] == selected_e2e].iloc[0]
+    
+    # Exibição do Score com destaque visual
+    score_val = tx_row['riskScore']
+    score_color = "#00E676" if score_val <= 30 else ("#FFAA00" if score_val <= 60 else "#FF3D71")
+    
+    col_inf1, col_inf2, col_inf3 = st.columns([1.2, 1.2, 1.6])
+    with col_inf1:
+        st.markdown(f"""
+        <div class="kpi-card" style="border-left: 5px solid {score_color};">
+            <div class="kpi-title">Score de Risco IA</div>
+            <div class="kpi-value" style="color: {score_color};">{score_val} / 99</div>
+            <div class="kpi-sub">Decisão: {tx_row['recommendedAction']}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col_inf2:
+        st.markdown(f"""
+        <div class="kpi-card kpi-card-blue">
+            <div class="kpi-title">Dados da Transação</div>
+            <div class="kpi-value" style="font-size: 1.1rem;">R$ {tx_row['valor']:,.2f} ({tx_row['paymentMethod']})</div>
+            <div class="kpi-sub">Orig: {tx_row['originBank']}</div>
+        </div>
+        """, unsafe_allow_html=True)
+    with col_inf3:
+        st.markdown(f"""
+        <div class="kpi-card">
+            <div class="kpi-title">Validação Payload / Telemetria</div>
+            <div class="kpi-value" style="font-size: 0.95rem; font-weight: 600;">DDD: {tx_row['accountDDD']} ({tx_row['cpfDddStatus']})</div>
+            <div class="kpi-sub">Device: {tx_row['deviceStatus']} | Recorrência: {tx_row['txCount24h']}x</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    st.markdown(f"### 🔍 Justificativa e Motivos da IA: `{tx_row['aiReasoning']}`")
+    
+    st.divider()
+    st.markdown("### 💬 Chatbot Copilot Integrado")
+    
+    if "chat_messages" not in st.session_state:
+        st.session_state.chat_messages = [{
+            "role": "assistant",
+            "content": "Olá! Sou o **Agente Antifraude**. Pergunte-me sobre este payload Pix, sobre os critérios do score ou comandos de bloqueio."
+        }]
+        
+    for msg in st.session_state.chat_messages:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+            
+    user_prompt = st.chat_input("Digite sua dúvida para o Agente (ex: 'Por que esta transação pontuou alto?' ou 'Emitir Bloqueio Cautelar')...")
+    if user_prompt:
+        st.session_state.chat_messages.append({"role": "user", "content": user_prompt})
+        with st.chat_message("user"):
+            st.markdown(user_prompt)
+            
+        p_lower = user_prompt.lower()
+        if "bloqueio" in p_lower or "cautelar" in p_lower:
+            reply = f"🚨 **Comando Executado:** O Bloqueio Cautelar de 72h foi acionado para o ID `{selected_e2e}` com base nas diretrizes do MED/Bacen."
+        else:
+            reply = f"""**Análise Detalhada do Agente para `{selected_e2e}`:**
+- **Score Atribuído:** `{score_val}/99` (Recomendação: **{tx_row['recommendedAction']}**).
+- **payload Payload / Features:** Documento origem `{tx_row['originDocumentNumber']}` vs Destino `{tx_row['destinationDocumentNumber']}`.
+- **Parecer:** {'Transação com alto grau de confiabilidade.' if score_val <= 30 else 'Atenção requerida: indícios de fraude ou desvio comportamental detectados na telemetria.'}"""
+            
+        st.session_state.chat_messages.append({"role": "assistant", "content": reply})
+        with st.chat_message("assistant"):
+            st.markdown(reply)
+
+# ==============================================================================
+# 8. PÁGINA 3: BACKTEST DE CENÁRIOS (SHADOW MODE)
+# ==============================================================================
+elif menu_opcao == "Backtest de Cenários (Shadow Mode)":
+    st.markdown("""
+    <div class="synapse-header">
+        <h1>🧪 BACKTEST DE CENÁRIOS • SHADOW MODE</h1>
+        <p>Simule regras de risco em ambiente isolado antes da aplicação em produção</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    col_b1, col_b2 = st.columns([1.2, 1.8])
+    
+    with col_b1:
+        st.markdown("### 🎛️ Parâmetros de Simulação")
+        sim_val_limit = st.slider("Valor Limite para Alerta (R$)", 200, 5000, 1000, 100)
+        sim_rec_limit = st.slider("Qtd Tentativas Recorrência 24h", 1, 10, 3, 1)
+        
+        simulated_df = processed_df.copy()
+        sim_triggered = simulated_df[(simulated_df["valor"] > sim_val_limit) & (simulated_df["txCount24h"] >= sim_rec_limit)]
+        
+        st.metric("Transações Atingidas no Shadow Mode", len(sim_triggered), f"R$ {sim_triggered['valor'].sum():,.2f}")
+        
+        if st.button("💾 Salvar Cenário de Shadow Mode", use_container_width=True):
+            st.success("Cenário salvo com sucesso no repositório de regras do Synapse!")
+
+    with col_b2:
+        st.markdown("### 📈 Comparativo de Impacto (Produção vs Shadow Mode)")
+        if not simulated_df.empty:
+            comp_df = pd.DataFrame({
+                "Status": ["Aprovados", "Revisão / Bloqueio"],
+                "Produção": [len(processed_df[processed_df["recommendedAction"] == "APROVADO"]), len(processed_df[processed_df["recommendedAction"] != "APROVADO"])],
+                "Shadow Mode": [len(simulated_df) - len(sim_triggered), len(sim_triggered)]
+            })
+            fig_comp = px.bar(comp_df, x="Status", y=["Produção", "Shadow Mode"], barmode="group", color_discrete_sequence=["#0072FF", "#00E676"])
+            fig_comp.update_layout(paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)", font_color="#E2E8F0")
+            st.plotly_chart(fig_comp, use_container_width=True)
+
+# ==============================================================================
+# 9. PÁGINA 4: DOCUMENTAÇÃO, AJUDA & POP (BLOQUEIO CAUTELAR E MED)
+# ==============================================================================
+elif menu_opcao == "Documentação, Ajuda & POP (Bacen / MED)":
+    st.markdown("""
+    <div class="synapse-header">
+        <h1>📚 DOCUMENTAÇÃO & POP • BLOQUEIO CAUTELAR E MED</h1>
+        <p>Procedimento Operacional Padrão (POP) para Identificação de Fraudes e Acionamento Regulatório</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("""
+    ### 🛡️ Procedimento Operacional Padrão (POP): Identificação e Resposta à Fraude Pix
+    
+    1. **Identificação do Indício de Fraude:**
+       * O motor Synapse pontua a transação de **0 a 99**. Scores superiores a **80** ativam automaticamente o gatilho regulatório.
+       * Divergências entre o DDD da conta e a Região Fiscal do CPF (9º dígito) somadas a alta recorrência em 24h são bandeiras críticas de *Account Takeover*.
+       
+    2. **Acionamento do Bloqueio Cautelar (Resolução BCB nº 147):**
+       * Caso haja suspeita fundamentada de fraude, a instituição deve reter os recursos por até **72 horas**.
+       * Durante este período, a mesa de segurança analisa o payload e a telemetria do dispositivo.
+       
+    3. **Acionamento do Mecanismo Especial de Devolução (MED):**
+       * Confirmada a fraude após contato com o cliente ou constatação de desvio, acionar o MED via API SPI/Swagger para restituição de valores ao pagador de origem.
+    """)
+
+    st.divider()
+    cautelares_df = processed_df[processed_df["recommendedAction"].isin(["BLOQUEIO CAUTELAR (72h)", "REPROVADO / FRAUDE"])]
+    csv_cautelar = cautelares_df.to_csv(index=False).encode("utf-8")
+    
+    st.download_button(
+        "🚨 Baixar Lote Consolidado para Bloqueio Cautelar / MED (.CSV)",
+        data=csv_cautelar,
+        file_name="lote_bloqueio_cautelar_med_bacen.csv",
+        mime="text/csv",
+        use_container_width=True
+    )
+
+# ==============================================================================
+# 10. PÁGINA 5: CENTRAL DE ALERTAS
+# ==============================================================================
+elif menu_opcao == "Central de Alertas":
+    st.markdown("""
+    <div class="synapse-header">
+        <h1>🔔 CENTRAL DE ALERTAS & NOTIFICAÇÕES</h1>
+        <p>Monitore disparos automáticos e crie novos alertas de alto risco</p>
+    </div>
+    """, unsafe_allow_html=True)
+
+    st.markdown("### ➕ Criar Novo Alerta de Risco")
+    with st.form("alert_form"):
+        col_a1, col_a2 = st.columns(2)
+        with col_a1:
+            alerta_nome = st.text_input("Nome da Regra de Alerta", value="Alerta Pix Alto Valor > R$ 3.000")
+            alerta_canal = st.selectbox("Canal de Notificação", ["Slack / Teams", "E-mail de Plantão", "Webhook API"])
+        with col_a2:
+            alerta_threshold = st.slider("Score Mínimo para Disparo", 50, 99, 85)
+            alerta_status = st.selectbox("Status", ["Ativo", "Inativo (Shadow)"])
+            
+        submitted = st.form_submit_button("Salvar Alerta")
+        if submitted:
+            st.success(f"Alerta '{alerta_nome}' criado com sucesso para o canal {alerta_canal}!")
+
+    st.markdown("### 📋 Histórico de Alertas Recentes Disparados")
+    alertas_historico = pd.DataFrame([
+        {"Data": "2026-10-27 22:15", "Regra": "Recorrência Anômala > 1k", "Score": 89, "Canal": "Slack", "Status": "Disparado"},
+        {"Data": "2026-10-27 21:40", "Regra": "BIN Cartão Restrito", "Score": 95, "Canal": "Webhook", "Status": "Disparado"},
+        {"Data": "2026-10-27 20:10", "Regra": "Divergência DDD x CPF", "Score": 78, "Canal": "E-mail", "Status": "Enviado"}
+    ])
+    st.dataframe(alertas_historico, use_container_width=True)
