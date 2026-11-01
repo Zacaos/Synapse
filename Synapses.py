@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 # ==============================================================================
 # 1. CONFIGURAÇÃO DA PÁGINA E ESTILIZAÇÃO CSS (DARK MODE + GRADIENTE BRASIL)
 # ==============================================================================
+
 st.set_page_config(
     page_title="Synapse Fraud Prevention | Backtest & Risk Engine",
     page_icon="🛡️",
