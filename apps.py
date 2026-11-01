@@ -3,16 +3,17 @@ Synapse Fraud Prevention — MVP Antifraude-as-a-Service (FaaS) para Pix com IA
 =============================================================================
 Compatível com:
 - Streamlit in Snowflake ("USER$izaque.brito".PUBLIC.STBE926F279416E6D4C1FAF8F132346F1FF2873093)
+  * Funciona nativamente COM ou SEM o pacote `plotly` habilitado no Snowflake
+    (Motor Gráfico Multi-Backend: Plotly -> Altair -> SVG/HTML Nativo).
 - Streamlit Local / Docker / GCP Cloud Run
 
 Arquitetura baseada em princípios SOLID e Design Patterns:
 - AuthenticationService (SRP): Autenticação com PBKDF2-SHA256 e resolução de RBAC no servidor.
 - OnboardingTenantService (SRP/Factory): Jornada B2B com emissão de API Token (syn_live_ / syn_sandbox_).
-- PixRiskScoringEngine (OCP/Strategy): Motor de Score 0-99 focado exclusivamente em Golpes Pix.
-- FraudClusterEngine (SRP): Formação de clusters de fraude (Mule Rings, ATO, Eng. Social) e Geo/CPFxDDD.
-- DeviceNetworkFootprintService (SRP): Camada de Dispositivo, Fingerprint, Rede (ASN/VPN/Tor) e SDK.
-- AntifraudAutomationService (Command): Recomendações de IA e automações (MFA, Bloqueio Cautelar 72h, MED).
+- PixScoringEngine (OCP/Strategy): Motor de Score 0-99 focado exclusivamente em Golpes Pix.
 - FeatureStoreRepository (Adapter/DIP): Híbrido Snowflake Snowpark + CSV Upload + In-Memory Generator.
+- ChartRenderer (Strategy/Adapter): Renderização resiliente de Donut, Barras Empilhadas, Clusters e Mapa
+  (suporta Plotly, Altair nativo do Snowflake e SVG fallback sem quebrar se `plotly` não estiver instalado).
 """
 
 from __future__ import annotations
@@ -20,12 +21,9 @@ from __future__ import annotations
 import datetime as dt
 import hashlib
 import hmac
-import io
-import json
-import math
 import os
 import secrets
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
@@ -34,13 +32,24 @@ import pandas as pd
 try:
     import plotly.express as px
     import plotly.graph_objects as go
-except ImportError:  # pragma: no cover
+
+    HAS_PLOTLY = True
+except Exception:  # pragma: no cover
     px = None
     go = None
+    HAS_PLOTLY = False
+
+try:
+    import altair as alt
+
+    HAS_ALTAIR = True
+except Exception:  # pragma: no cover
+    alt = None
+    HAS_ALTAIR = False
 
 try:
     import streamlit as st
-except ImportError:  # pragma: no cover
+except Exception:  # pragma: no cover
     st = None
 
 # Tentativa de conexão nativa com Snowflake (Streamlit in Snowflake - SiS)
@@ -106,6 +115,23 @@ DECISION_POLICIES: List[str] = [
     "BLOQUEIO CAUTELAR (72h)",
     "REPROVADO / ABRIR MED",
 ]
+
+DECISION_COLOR_MAP: Dict[str, str] = {
+    "APROVADO": "#00E676",
+    "MFA / STEP-UP": "#38BDF8",
+    "REVISÃO MANUAL": "#FBBF24",
+    "BLOQUEIO CAUTELAR (72h)": "#F97316",
+    "REPROVADO / ABRIR MED": "#EF4444",
+}
+
+TYPOLOGY_COLOR_MAP: Dict[str, str] = {
+    "Transação Legítima": "#00E676",
+    "Mule Account (Conta Laranja)": "#EF4444",
+    "Account Takeover (Invasão ATO)": "#F97316",
+    "QR Code Falso / Eng. Social": "#FBBF24",
+    "Falsa Central / Mão Fantasma": "#A855F7",
+    "Pulverização / Drop Rápido": "#38BDF8",
+}
 
 
 # ==============================================================================
@@ -192,7 +218,6 @@ class AuthenticationService:
         clean_id = identifier.strip().lower()
         directory = cls._get_user_directory()
 
-        # Permite login por e-mail ou username
         matched_email = None
         if clean_id in directory:
             matched_email = clean_id
@@ -386,16 +411,11 @@ class PixScoringEngine:
 
     @classmethod
     def normalize_dataframe(cls, df_raw: pd.DataFrame) -> pd.DataFrame:
-        """
-        Normaliza diferentes formatos de CSV de Pix (formato legado `apps.py`,
-        formato `Synapses` ou CSV corporativo) para o schema canônico da Feature Store.
-        """
         df = df_raw.copy()
 
-        # Mapeamento de colunas sinônimas (ex: CSV legado de apps.py ou Snowflake UPPERCASE)
+        # Mapeamento case-insensitive (ex: Snowflake UPPERCASE)
         lower_map = {c.lower(): c for c in df.columns}
-        canonical_cols = list(cls.REQUIRED_DEFAULTS.keys())
-        for c_col in canonical_cols:
+        for c_col in cls.REQUIRED_DEFAULTS:
             if c_col not in df.columns and c_col.lower() in lower_map:
                 df[c_col] = df[lower_map[c_col.lower()]]
 
@@ -464,14 +484,12 @@ class PixScoringEngine:
             if col not in df.columns:
                 df[col] = default_val
 
-        # Enriquecimento geográfico (UF e Coordenadas Lat/Lon a partir do DDD)
         ufs, cities, lats, lons = [], [], [], []
         for idx, ddd_val in enumerate(df["ddd_telefone"]):
             ddd_int = int(ddd_val) if pd.notna(ddd_val) else 11
             uf, city, lat, lon = DDD_TO_UF_COORDS.get(ddd_int, ("SP", "São Paulo", -23.5505, -46.6333))
             ufs.append(uf)
             cities.append(city)
-            # Pequeno jitter determinístico para visualização no mapa
             jitter_lat = ((idx * 17) % 100 - 50) * 0.012
             jitter_lon = ((idx * 31) % 100 - 50) * 0.012
             lats.append(round(lat + jitter_lat, 4))
@@ -491,10 +509,6 @@ class PixScoringEngine:
         weights: Optional[PixRiskWeights] = None,
         tenant_policy: Optional[B2BTenantConfig] = None,
     ) -> pd.DataFrame:
-        """
-        Executa a modelagem de Score Pix (0-99), classificação de tipologia de golpe,
-        formação de clusters, políticas de decisão e recomendações de automação.
-        """
         w = weights or PixRiskWeights()
         t_mfa = tenant_policy.threshold_mfa if tenant_policy else 35
         t_rev = tenant_policy.threshold_review if tenant_policy else 60
@@ -533,7 +547,6 @@ class PixScoringEngine:
             rat_flag = bool(row["remote_access_rat"])
             cadence = int(row["typing_cadence_score"])
 
-            # 1. Ruptura Comportamental de Valor (Valor vs Média 30d)
             if ratio_val >= 4.0 and valor >= 1500:
                 pts += w.w_value_rupture
                 reasons.append(f"Ruptura severa de valor ({ratio_val:.1f}x acima da média 30d)")
@@ -541,20 +554,17 @@ class PixScoringEngine:
                 pts += w.w_value_rupture * 0.55
                 reasons.append(f"Valor atípico ({ratio_val:.1f}x da média habitual)")
 
-            # 2. Divergência Geográfica BACEN: 9º Dígito CPF vs DDD
             cpf_ddd_ok = cls.check_cpf_ddd_consistency(cpf_dig, ddd)
             cpf_ddd_valid_list.append(cpf_ddd_ok)
             if not cpf_ddd_ok:
                 pts += w.w_cpf_ddd_mismatch
                 reasons.append(f"Conflito Geográfico CPF (Região {cpf_dig}) vs DDD ({ddd})")
 
-            # 3. Janela Noturna crítica BACEN (20h às 06h)
             is_night = hour >= 20 or hour <= 5
             if is_night and valor >= 800:
                 pts += w.w_night_window
                 reasons.append(f"Janela Noturna Pix ({hour:02d}h) com valor sensível")
 
-            # 4. Velocidade / Pulverização (txCount24h)
             if tx_24h >= 12:
                 pts += w.w_velocity_24h
                 reasons.append(f"Alta velocidade transacional ({tx_24h} Pix em 24h)")
@@ -562,7 +572,6 @@ class PixScoringEngine:
                 pts += w.w_velocity_24h * 0.5
                 reasons.append(f"Frequência elevada ({tx_24h} Pix/24h)")
 
-            # 5. Camada de Dispositivo, Fingerprint & Rede
             if dev_status == "Emulator_Root":
                 pts += w.w_device_emulator_vpn
                 reasons.append("Device Fingerprint: Emulador / Root detectado pelo SDK")
@@ -573,7 +582,6 @@ class PixScoringEngine:
                 pts += w.w_device_emulator_vpn * 0.50
                 reasons.append("Dispositivo não reconhecido (1º acesso na conta)")
 
-            # 6. Idade da Conta/Chave Destino & Fan-in (Mule Account)
             if dest_age <= 5:
                 pts += w.w_new_pix_key
                 reasons.append(f"Chave Pix destino recém-criada ({dest_age} dias)")
@@ -581,12 +589,10 @@ class PixScoringEngine:
                 pts += w.w_fan_in_mule
                 reasons.append(f"Padrão Conta Laranja (Mule): {unique_senders} pagadores distintos p/ chave nova")
 
-            # 7. Biometria Comportamental / Mão Fantasma (RAT / Cadência)
             if rat_flag or cadence < 45:
                 pts += w.w_typing_cadence_rat
                 reasons.append(f"Anomalia de Sessão SDK: Cadência {cadence}/100 ou Acesso Remoto (RAT)")
 
-            # 8. Distância Geográfica (km)
             if geo_km >= 350:
                 pts += w.w_geo_distance
                 reasons.append(f"Deslocamento geográfico extremo ({geo_km:.0f} km do perímetro habitual)")
@@ -594,7 +600,6 @@ class PixScoringEngine:
             score = int(min(max(round(pts), 2), 99))
             scores.append(score)
 
-            # Classificação da Política de Decisão (0-99)
             if score >= t_med:
                 decision = "REPROVADO / ABRIR MED"
                 rec = (
@@ -632,7 +637,6 @@ class PixScoringEngine:
             recommendations.append(rec)
             automations.append(auto_act)
 
-            # Tipologia de Golpe Pix & Formação de Cluster
             if score < t_mfa:
                 typology = "Transação Legítima"
                 cluster = "Cluster 0 — Operação Normal / Confiável"
@@ -677,13 +681,6 @@ class PixScoringEngine:
 
 
 class FeatureStoreRepository:
-    """
-    Padrão Repository/Adapter para carregar a base Pix a partir de:
-    1. Upload CSV do usuário (B2B/Analista),
-    2. Sessão ativa do Snowflake (Feature Store Offline/Online), ou
-    3. Dataset sintético calibrado com arquétipos reais de Golpes Pix no Brasil.
-    """
-
     @classmethod
     def load_from_snowflake_or_default(cls, n_samples: int = 360) -> Tuple[pd.DataFrame, str]:
         if HAS_SNOWFLAKE_SESSION and _SNOWFLAKE_SESSION is not None:
@@ -717,10 +714,8 @@ class FeatureStoreRepository:
 
         records: List[Dict[str, Any]] = []
         for i in range(n_samples):
-            # Sorteio de arquétipo para garantir representatividade nos clusters
             archetype_roll = rng.random()
             if archetype_roll < 0.58:
-                # Arquétipo 0: Legítimo
                 valor = round(float(rng.uniform(45.0, 1400.0)), 2)
                 avg30 = round(valor * float(rng.uniform(0.65, 1.35)), 2)
                 hour = int(rng.integers(7, 20))
@@ -728,7 +723,6 @@ class FeatureStoreRepository:
                 dest_age = int(rng.integers(60, 720))
                 senders = int(rng.integers(1, 3))
                 ddd = int(rng.choice(ddd_keys))
-                # Encontra região fiscal correspondente ao DDD
                 cpf_dig = next((reg for reg, ddds in CPF_REGION_DDD_MAP.items() if ddd in ddds), 8)
                 geo_km = round(float(rng.uniform(1.0, 35.0)), 1)
                 dev_status = "Trusted"
@@ -740,7 +734,6 @@ class FeatureStoreRepository:
                 isp = str(rng.choice(isps[:3]))
                 is_fraud = 0
             elif archetype_roll < 0.74:
-                # Arquétipo 1: Mule Account / Conta Laranja & Pulverização
                 valor = round(float(rng.uniform(1800.0, 9500.0)), 2)
                 avg30 = round(float(rng.uniform(220.0, 650.0)), 2)
                 hour = int(rng.choice([1, 2, 3, 14, 16, 22, 23]))
@@ -748,7 +741,7 @@ class FeatureStoreRepository:
                 dest_age = int(rng.integers(1, 5))
                 senders = int(rng.integers(9, 24))
                 ddd = int(rng.choice(ddd_keys))
-                cpf_dig = int((ddd + 3) % 10)  # Força chance de divergência CPF x DDD
+                cpf_dig = int((ddd + 3) % 10)
                 geo_km = round(float(rng.uniform(120.0, 680.0)), 1)
                 dev_status = str(rng.choice(["New_Device", "VPN_Proxy"]))
                 vpn_flag = dev_status == "VPN_Proxy"
@@ -759,7 +752,6 @@ class FeatureStoreRepository:
                 isp = str(rng.choice(isps[3:])) if vpn_flag else str(rng.choice(isps[:3]))
                 is_fraud = 1
             elif archetype_roll < 0.88:
-                # Arquétipo 2: Account Takeover (ATO / Emulador / Noturno)
                 valor = round(float(rng.uniform(3500.0, 18500.0)), 2)
                 avg30 = round(float(rng.uniform(300.0, 900.0)), 2)
                 hour = int(rng.choice([0, 1, 2, 3, 4, 21, 22, 23]))
@@ -778,7 +770,6 @@ class FeatureStoreRepository:
                 isp = str(rng.choice(isps[3:]))
                 is_fraud = 1
             else:
-                # Arquétipo 3: Falsa Central / Mão Fantasma (RAT) / QR Code Falso
                 valor = round(float(rng.uniform(2200.0, 12000.0)), 2)
                 avg30 = round(float(rng.uniform(350.0, 800.0)), 2)
                 hour = int(rng.integers(9, 22))
@@ -849,7 +840,6 @@ const synapse = new SynapseShieldSDK({
   detectRemoteAccessOverlay: true, // Detecta TeamViewer / AnyDesk / Mão Fantasma
 });
 
-// Coleta camadas de Dispositivo + Rede + Comportamento no início da jornada Pix
 export async function scorePixTransaction(pixPayload) {
   const telemetry = await synapse.collectFootprint({
     collectCanvasWebGLHash: true,
@@ -915,13 +905,402 @@ payload = {
 response = requests.post(
     SYNAPSE_URL,
     json=payload,
-    headers={"Authorization": f"Bearer {SYNAPSE_API_TOKEN}", " timeout": "2"}
+    headers={"Authorization": f"Bearer {SYNAPSE_API_TOKEN}"},
+    timeout=2
 )
 print(response.json())"""
 
 
 # ==============================================================================
-# 7. CAMADA DE APRESENTAÇÃO STREAMLIT (DARK MODE + GRADIENTE BRASIL)
+# 7. RENDERIZADOR MULTI-BACKEND DE GRÁFICOS (PLOTLY -> ALTAIR -> SVG/NATIVO)
+# ==============================================================================
+
+
+def format_brl(value: float) -> str:
+    return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
+
+def safe_rerun() -> None:
+    if st is None:
+        return
+    if hasattr(st, "rerun"):
+        st.rerun()
+    elif hasattr(st, "experimental_rerun"):
+        st.experimental_rerun()
+
+
+def safe_dataframe(df: pd.DataFrame, height: Optional[int] = None) -> None:
+    if st is None:
+        return
+    kwargs: Dict[str, Any] = {"use_container_width": True}
+    if height is not None:
+        kwargs["height"] = height
+    try:
+        st.dataframe(df, hide_index=True, **kwargs)
+    except TypeError:
+        st.dataframe(df, **kwargs)
+
+
+class ChartRenderer:
+    """
+    Motor de Visualização Multi-Backend (Strategy/Adapter).
+    Evita falhas `AttributeError: 'NoneType' object has no attribute 'Figure'` no
+    Streamlit in Snowflake quando o pacote `plotly` não está habilitado no container,
+    utilizando automaticamente Altair (nativo do Snowflake) ou SVG/HTML fallback.
+    """
+
+    @staticmethod
+    def build_svg_donut_html(
+        df_grp: pd.DataFrame,
+        category_col: str,
+        value_col: str,
+        count_col: str,
+        pct_col: str,
+        title: str,
+        color_map: Dict[str, str],
+    ) -> str:
+        """Gera um gráfico de Rosca (Donut) em SVG/HTML puro com legenda completa (%, R$ e Qtd)."""
+        total_val = float(df_grp[value_col].sum()) or 1.0
+        palette = ["#00E676", "#38BDF8", "#FBBF24", "#F97316", "#EF4444", "#A855F7"]
+        circles_svg = []
+        legend_rows = []
+        cumulative_pct = 0.0
+
+        for idx, row in df_grp.iterrows():
+            cat = str(row[category_col])
+            val = float(row[value_col])
+            cnt = int(row[count_col])
+            pct = float(row[pct_col])
+            share = (val / total_val) * 100.0
+            color = color_map.get(cat, palette[idx % len(palette)])
+            dash_array = f"{share:.2f} {100.0 - share:.2f}"
+            dash_offset = f"{100.0 - cumulative_pct + 25.0:.2f}"
+            cumulative_pct += share
+
+            circles_svg.append(
+                f'<circle width="100%" height="100%" cx="21" cy="21" r="15.91549430918954" '
+                f'fill="transparent" stroke="{color}" stroke-width="5.2" '
+                f'stroke-dasharray="{dash_array}" stroke-dashoffset="{dash_offset}"></circle>'
+            )
+            legend_rows.append(
+                f'<div style="display:flex;justify-content:space-between;align-items:center;'
+                f'padding:4px 0;border-bottom:1px solid #1E293B;font-size:0.80rem;">'
+                f'<span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;'
+                f'background:{color};margin-right:7px;"></span><b>{cat}</b></span>'
+                f'<span style="color:#E2E8F0;">{pct:.1f}% • {cnt} tx • {format_brl(val)}</span>'
+                f"</div>"
+            )
+
+        return (
+            f'<div style="background:#0F172A;border:1px solid #1E293B;border-radius:12px;padding:1rem;">'
+            f'<div style="font-weight:700;font-size:0.92rem;color:#F8FAFC;margin-bottom:0.6rem;">{title}</div>'
+            f'<div style="display:flex;align-items:center;gap:1.2rem;flex-wrap:wrap;">'
+            f'<div style="width:155px;height:155px;flex-shrink:0;margin:0 auto;">'
+            f'<svg width="100%" height="100%" viewBox="0 0 42 42">'
+            f'<circle cx="21" cy="21" r="15.91549430918954" fill="transparent" stroke="#1E293B" stroke-width="5.2"></circle>'
+            f'{"".join(circles_svg)}'
+            f"</svg></div>"
+            f'<div style="flex:1;min-width:210px;">{"".join(legend_rows)}</div>'
+            f"</div></div>"
+        )
+
+    @classmethod
+    def render_donut(
+        cls,
+        df_grp: pd.DataFrame,
+        category_col: str,
+        theta_col: str,
+        valor_col: str,
+        count_col: str,
+        pct_col: str,
+        title: str,
+        color_map: Dict[str, str],
+    ) -> None:
+        if st is None:
+            return
+
+        if HAS_PLOTLY and go is not None:
+            fig = go.Figure(
+                data=[
+                    go.Pie(
+                        labels=df_grp[category_col],
+                        values=df_grp[theta_col],
+                        hole=0.58,
+                        text=df_grp["label_rich"],
+                        textinfo="text",
+                        marker=dict(colors=[color_map.get(str(d), "#38BDF8") for d in df_grp[category_col]]),
+                        hovertemplate=(
+                            "<b>%{label}</b><br>"
+                            "Participação: %{percent}<br>"
+                            "Detalhe: %{text}<extra></extra>"
+                        ),
+                    )
+                ]
+            )
+            fig.update_layout(
+                title=title,
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#F8FAFC"),
+                height=390,
+                legend=dict(orientation="h", y=-0.15),
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            return
+
+        if HAS_ALTAIR and alt is not None:
+            try:
+                domain_cats = list(df_grp[category_col].astype(str))
+                range_cols = [color_map.get(c, "#38BDF8") for c in domain_cats]
+                chart = (
+                    alt.Chart(df_grp, title=title)
+                    .mark_arc(innerRadius=62, outerRadius=118, stroke="#06090F", strokeWidth=2)
+                    .encode(
+                        theta=alt.Theta(field=theta_col, type="quantitative"),
+                        color=alt.Color(
+                            field=category_col,
+                            type="nominal",
+                            scale=alt.Scale(domain=domain_cats, range=range_cols),
+                            legend=alt.Legend(title="Categoria", orient="bottom"),
+                        ),
+                        tooltip=[
+                            alt.Tooltip(category_col, title="Categoria"),
+                            alt.Tooltip(pct_col, title="Percentual (%)", format=".1f"),
+                            alt.Tooltip(count_col, title="Quantidade (#)"),
+                            alt.Tooltip(valor_col, title="Valor Total (R$)", format=",.2f"),
+                        ],
+                    )
+                    .properties(height=300)
+                )
+                st.altair_chart(chart, use_container_width=True)
+                # Exibe resumo compacto com %, Valor R$ e Quantidade logo abaixo da rosca
+                summary_view = pd.DataFrame(
+                    {
+                        "Categoria": df_grp[category_col],
+                        "%": df_grp[pct_col].map(lambda v: f"{float(v):.1f}%"),
+                        "Qtd (#)": df_grp[count_col].astype(int),
+                        "Valor (R$)": df_grp[valor_col].map(lambda v: format_brl(float(v))),
+                    }
+                )
+                safe_dataframe(summary_view)
+                return
+            except Exception:
+                pass
+
+        # Fallback SVG/HTML universal
+        html_donut = cls.build_svg_donut_html(
+            df_grp=df_grp,
+            category_col=category_col,
+            value_col=valor_col,
+            count_col=count_col,
+            pct_col=pct_col,
+            title=title,
+            color_map=color_map,
+        )
+        st.markdown(html_donut, unsafe_allow_html=True)
+
+    @classmethod
+    def render_stacked_bar(
+        cls,
+        df_grp: pd.DataFrame,
+        x_col: str,
+        y_col: str,
+        color_col: str,
+        title: str,
+        x_title: str,
+        y_title: str,
+        color_map: Dict[str, str],
+        height: int = 400,
+    ) -> None:
+        if st is None:
+            return
+
+        if HAS_PLOTLY and px is not None:
+            fig = px.bar(
+                df_grp,
+                x=x_col,
+                y=y_col,
+                color=color_col,
+                barmode="stack",
+                text_auto=True,
+                color_discrete_map=color_map,
+                labels={x_col: x_title, y_col: y_title, color_col: "Classificação"},
+                title=title,
+            )
+            fig.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#F8FAFC"),
+                height=height,
+                xaxis_tickangle=-18,
+                legend=dict(orientation="h", y=-0.28),
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            return
+
+        if HAS_ALTAIR and alt is not None:
+            try:
+                domain_cats = [c for c in color_map.keys() if c in set(df_grp[color_col].astype(str))]
+                if not domain_cats:
+                    domain_cats = list(df_grp[color_col].astype(str).unique())
+                range_cols = [color_map.get(c, "#38BDF8") for c in domain_cats]
+                chart = (
+                    alt.Chart(df_grp, title=title)
+                    .mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3)
+                    .encode(
+                        x=alt.X(f"{x_col}:N", title=x_title, axis=alt.Axis(labelAngle=-20)),
+                        y=alt.Y(f"{y_col}:Q", stack="zero", title=y_title),
+                        color=alt.Color(
+                            f"{color_col}:N",
+                            title="Política / Status",
+                            scale=alt.Scale(domain=domain_cats, range=range_cols),
+                            legend=alt.Legend(orient="bottom"),
+                        ),
+                        tooltip=[x_col, color_col, alt.Tooltip(y_col, format=",.2f")],
+                    )
+                    .properties(height=height - 40)
+                )
+                st.altair_chart(chart, use_container_width=True)
+                return
+            except Exception:
+                pass
+
+        st.markdown(f"**{title}**")
+        pivoted = df_grp.pivot(index=x_col, columns=color_col, values=y_col).fillna(0)
+        st.bar_chart(pivoted)
+
+    @classmethod
+    def render_cluster_scatter(cls, df_scored: pd.DataFrame) -> None:
+        if st is None:
+            return
+        title = "Formação de Clusters: Velocidade 24h vs. Valor (R$) vs. Fan-in de Recebedores"
+
+        if HAS_PLOTLY and px is not None:
+            fig = px.scatter(
+                df_scored,
+                x="txCount24h",
+                y="valor",
+                size="uniqueSenders24h",
+                color="clusterName",
+                hover_name="txId",
+                hover_data=["accountId", "pixKey", "riskScore", "decision", "fraudTypology", "uf"],
+                color_discrete_sequence=["#00E676", "#EF4444", "#F97316", "#38BDF8"],
+                labels={
+                    "txCount24h": "Velocidade Transacional (Pix em 24h)",
+                    "valor": "Valor da Transação (R$)",
+                    "clusterName": "Cluster Identificado",
+                    "uniqueSenders24h": "Pagadores Distintos (Fan-in)",
+                },
+                title=title,
+            )
+            fig.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#F8FAFC"),
+                height=430,
+                legend=dict(orientation="h", y=-0.25),
+            )
+            st.plotly_chart(fig, use_container_width=True)
+            return
+
+        if HAS_ALTAIR and alt is not None:
+            try:
+                chart = (
+                    alt.Chart(df_scored, title=title)
+                    .mark_circle(opacity=0.82, stroke="#06090F", strokeWidth=1)
+                    .encode(
+                        x=alt.X("txCount24h:Q", title="Velocidade Transacional (Pix em 24h)"),
+                        y=alt.Y("valor:Q", title="Valor da Transação (R$)"),
+                        size=alt.Size("uniqueSenders24h:Q", title="Fan-in Recebedor", scale=alt.Scale(range=[40, 520])),
+                        color=alt.Color(
+                            "clusterName:N",
+                            title="Cluster",
+                            scale=alt.Scale(range=["#00E676", "#EF4444", "#F97316", "#38BDF8"]),
+                            legend=alt.Legend(orient="bottom"),
+                        ),
+                        tooltip=[
+                            "txId",
+                            "accountId",
+                            "pixKey",
+                            "valor",
+                            "txCount24h",
+                            "uniqueSenders24h",
+                            "riskScore",
+                            "decision",
+                            "clusterName",
+                        ],
+                    )
+                    .properties(height=390)
+                    .interactive()
+                )
+                st.altair_chart(chart, use_container_width=True)
+                return
+            except Exception:
+                pass
+
+        st.markdown(f"**{title}**")
+        safe_dataframe(df_scored[["txId", "clusterName", "txCount24h", "valor", "uniqueSenders24h", "riskScore"]].head(20))
+
+    @classmethod
+    def render_geo_map(cls, df_scored: pd.DataFrame) -> None:
+        if st is None:
+            return
+        title = "Mapa Geográfico de Risco Pix (Concentração por DDD/UF e Decisão)"
+
+        if HAS_PLOTLY and px is not None:
+            fig_map = px.scatter_geo(
+                df_scored,
+                lat="lat",
+                lon="lon",
+                color="decision",
+                size="valor",
+                hover_name="city",
+                hover_data=["txId", "uf", "ddd_telefone", "cpf_9th_digit", "geoDistanceKm", "riskScore"],
+                color_discrete_map=DECISION_COLOR_MAP,
+                scope="south america",
+                title=title,
+            )
+            fig_map.update_geos(
+                center=dict(lat=-14.2350, lon=-51.9253),
+                projection_scale=3.2,
+                bgcolor="rgba(6,9,15,1)",
+                landcolor="#0F172A",
+                subunitcolor="#1E293B",
+                countrycolor="#334155",
+                showcountries=True,
+            )
+            fig_map.update_layout(
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#F8FAFC"),
+                height=440,
+                margin=dict(l=0, r=0, t=40, b=0),
+            )
+            st.plotly_chart(fig_map, use_container_width=True)
+            return
+
+        st.markdown(f"##### 🗺️ {title}")
+        try:
+            st.map(df_scored[["lat", "lon"]])
+        except Exception:
+            if HAS_ALTAIR and alt is not None:
+                chart = (
+                    alt.Chart(df_scored)
+                    .mark_circle(opacity=0.85)
+                    .encode(
+                        x=alt.X("lon:Q", title="Longitude", scale=alt.Scale(zero=False)),
+                        y=alt.Y("lat:Q", title="Latitude", scale=alt.Scale(zero=False)),
+                        size=alt.Size("valor:Q", title="Valor (R$)"),
+                        color=alt.Color("decision:N", title="Decisão"),
+                        tooltip=["city", "uf", "ddd_telefone", "valor", "riskScore", "decision"],
+                    )
+                    .properties(height=380)
+                )
+                st.altair_chart(chart, use_container_width=True)
+
+
+# ==============================================================================
+# 8. CAMADA DE APRESENTAÇÃO STREAMLIT (DARK MODE + GRADIENTE BRASIL)
 # ==============================================================================
 
 
@@ -1020,17 +1399,12 @@ def inject_synapse_theme() -> None:
     )
 
 
-def format_brl(value: float) -> str:
-    return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-
-
 def init_session_state() -> None:
     if "auth_user" not in st.session_state:
         st.session_state.auth_user = None
     if "risk_weights" not in st.session_state:
         st.session_state.risk_weights = PixRiskWeights()
     if "b2b_tenant" not in st.session_state:
-        # Tenant padrão pré-provisionado para demonstração imediata
         st.session_state.b2b_tenant = OnboardingTenantService.provision_tenant_and_tokens(
             cnpj="18236120000158",
             company_name="Synapse Pay Instituição de Pagamento S.A.",
@@ -1079,13 +1453,13 @@ def render_login_screen() -> None:
                 type="password",
                 value="Synapse@Admin2026",
             )
-            submitted = st.form_submit_button("Entrar no Cockpit Synapse", use_container_width=True, type="primary")
+            submitted = st.form_submit_button("Entrar no Cockpit Synapse", use_container_width=True)
 
             if submitted:
                 auth_user = AuthenticationService.authenticate(identifier, password)
                 if auth_user is not None:
                     st.session_state.auth_user = auth_user
-                    st.rerun()
+                    safe_rerun()
                 else:
                     st.error("❌ Credenciais inválidas. Verifique seu usuário/e-mail e senha.")
 
@@ -1181,14 +1555,6 @@ def render_executive_cockpit(df_scored: pd.DataFrame) -> None:
             unsafe_allow_html=True,
         )
 
-    color_map_decision = {
-        "APROVADO": "#00E676",
-        "MFA / STEP-UP": "#38BDF8",
-        "REVISÃO MANUAL": "#FBBF24",
-        "BLOQUEIO CAUTELAR (72h)": "#F97316",
-        "REPROVADO / ABRIR MED": "#EF4444",
-    }
-
     # 2. GRÁFICOS DE ROSCA (DONUT) COM PERCENTUAL (%), VALOR (R$) E QUANTIDADE (#)
     st.markdown("#### 🍩 Visão Proporcional: Percentual (%), Valor Financeiro (R$) e Quantidade (#)")
     donut_col1, donut_col2 = st.columns(2)
@@ -1203,33 +1569,16 @@ def render_executive_cockpit(df_scored: pd.DataFrame) -> None:
             lambda r: f"{r['decision']}<br>{r['pct_qtd']:.1f}% | {int(r['quantidade'])} tx | {format_brl(float(r['valor_total']))}",
             axis=1,
         )
-        fig_donut_dec = go.Figure(
-            data=[
-                go.Pie(
-                    labels=grp_dec["decision"],
-                    values=grp_dec["valor_total"],
-                    hole=0.58,
-                    text=grp_dec["label_rich"],
-                    textinfo="text",
-                    marker=dict(colors=[color_map_decision.get(d, "#94A3B8") for d in grp_dec["decision"]]),
-                    hovertemplate=(
-                        "<b>%{label}</b><br>"
-                        "Valor Financeiro: R$ %{value:,.2f}<br>"
-                        "Participação Financeira: %{percent}<br>"
-                        "Detalhe: %{text}<extra></extra>"
-                    ),
-                )
-            ]
-        )
-        fig_donut_dec.update_layout(
+        ChartRenderer.render_donut(
+            df_grp=grp_dec,
+            category_col="decision",
+            theta_col="valor_total",
+            valor_col="valor_total",
+            count_col="quantidade",
+            pct_col="pct_qtd",
             title="Rosca por Política de Decisão (%, Valor R$ e Qtd)",
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="#F8FAFC"),
-            height=400,
-            legend=dict(orientation="h", y=-0.15),
+            color_map=DECISION_COLOR_MAP,
         )
-        st.plotly_chart(fig_donut_dec, use_container_width=True)
 
     with donut_col2:
         grp_typ = (
@@ -1241,31 +1590,16 @@ def render_executive_cockpit(df_scored: pd.DataFrame) -> None:
             lambda r: f"{r['fraudTypology']}<br>{r['pct_val']:.1f}% | {int(r['quantidade'])} tx | {format_brl(float(r['valor_total']))}",
             axis=1,
         )
-        fig_donut_typ = go.Figure(
-            data=[
-                go.Pie(
-                    labels=grp_typ["fraudTypology"],
-                    values=grp_typ["quantidade"],
-                    hole=0.58,
-                    text=grp_typ["label_rich"],
-                    textinfo="text",
-                    hovertemplate=(
-                        "<b>%{label}</b><br>"
-                        "Quantidade: %{value} transações (%{percent})<br>"
-                        "Resumo: %{text}<extra></extra>"
-                    ),
-                )
-            ]
-        )
-        fig_donut_typ.update_layout(
+        ChartRenderer.render_donut(
+            df_grp=grp_typ,
+            category_col="fraudTypology",
+            theta_col="quantidade",
+            valor_col="valor_total",
+            count_col="quantidade",
+            pct_col="pct_val",
             title="Rosca por Tipologia de Golpe Pix (%, Qtd e Valor R$)",
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="#F8FAFC"),
-            height=400,
-            legend=dict(orientation="h", y=-0.15),
+            color_map=TYPOLOGY_COLOR_MAP,
         )
-        st.plotly_chart(fig_donut_typ, use_container_width=True)
 
     # 3. GRÁFICOS DE BARRAS EMPILHADAS (VALOR R$ E QUANTIDADE)
     st.markdown("#### 📊 Gráficos de Barras Empilhadas: Exposição Financeira (R$) e Volume de Operações (#)")
@@ -1276,60 +1610,32 @@ def render_executive_cockpit(df_scored: pd.DataFrame) -> None:
             df_scored.groupby(["fraudTypology", "decision"], as_index=False)
             .agg(valor_brl=("valor", "sum"), qtd=("txId", "count"))
         )
-        fig_stack_val = px.bar(
-            grp_stack_val,
-            x="fraudTypology",
-            y="valor_brl",
-            color="decision",
-            barmode="stack",
-            text_auto=".2s",
-            color_discrete_map=color_map_decision,
-            labels={
-                "fraudTypology": "Tipologia de Golpe Pix",
-                "valor_brl": "Valor Financeiro (R$)",
-                "decision": "Política de Decisão",
-            },
+        ChartRenderer.render_stacked_bar(
+            df_grp=grp_stack_val,
+            x_col="fraudTypology",
+            y_col="valor_brl",
+            color_col="decision",
             title="Barras Empilhadas — Valor (R$) por Tipologia x Decisão",
+            x_title="Tipologia de Golpe Pix",
+            y_title="Valor Financeiro (R$)",
+            color_map=DECISION_COLOR_MAP,
         )
-        fig_stack_val.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="#F8FAFC"),
-            height=420,
-            xaxis_tickangle=-18,
-            legend=dict(orientation="h", y=-0.28),
-        )
-        st.plotly_chart(fig_stack_val, use_container_width=True)
 
     with bar_col2:
         grp_stack_qtd = (
             df_scored.groupby(["destBank", "decision"], as_index=False)
             .agg(quantidade=("txId", "count"), valor_brl=("valor", "sum"))
         )
-        fig_stack_qtd = px.bar(
-            grp_stack_qtd,
-            x="destBank",
-            y="quantidade",
-            color="decision",
-            barmode="stack",
-            text_auto=True,
-            color_discrete_map=color_map_decision,
-            labels={
-                "destBank": "Instituição Recebedora (Destino)",
-                "quantidade": "Quantidade de Transações (#)",
-                "decision": "Política de Decisão",
-            },
+        ChartRenderer.render_stacked_bar(
+            df_grp=grp_stack_qtd,
+            x_col="destBank",
+            y_col="quantidade",
+            color_col="decision",
             title="Barras Empilhadas — Quantidade (#) por Instituição Destino x Decisão",
+            x_title="Instituição Recebedora (Destino)",
+            y_title="Quantidade de Transações (#)",
+            color_map=DECISION_COLOR_MAP,
         )
-        fig_stack_qtd.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="#F8FAFC"),
-            height=420,
-            xaxis_tickangle=-18,
-            legend=dict(orientation="h", y=-0.28),
-        )
-        st.plotly_chart(fig_stack_qtd, use_container_width=True)
 
 
 def render_clusters_and_geography(df_scored: pd.DataFrame) -> None:
@@ -1341,31 +1647,7 @@ def render_clusters_and_geography(df_scored: pd.DataFrame) -> None:
 
     cl_col1, cl_col2 = st.columns([1.35, 1])
     with cl_col1:
-        fig_cluster = px.scatter(
-            df_scored,
-            x="txCount24h",
-            y="valor",
-            size="uniqueSenders24h",
-            color="clusterName",
-            hover_name="txId",
-            hover_data=["accountId", "pixKey", "riskScore", "decision", "fraudTypology", "uf"],
-            color_discrete_sequence=["#00E676", "#EF4444", "#F97316", "#38BDF8"],
-            labels={
-                "txCount24h": "Velocidade Transacional (Pix em 24h)",
-                "valor": "Valor da Transação (R$)",
-                "clusterName": "Cluster Identificado",
-                "uniqueSenders24h": "Pagadores Distintos (Fan-in)",
-            },
-            title="Formação de Clusters: Velocidade 24h vs. Valor (R$) vs. Fan-in de Recebedores",
-        )
-        fig_cluster.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="#F8FAFC"),
-            height=430,
-            legend=dict(orientation="h", y=-0.25),
-        )
-        st.plotly_chart(fig_cluster, use_container_width=True)
+        ChartRenderer.render_cluster_scatter(df_scored)
 
     with cl_col2:
         cluster_summary = (
@@ -1381,9 +1663,8 @@ def render_clusters_and_geography(df_scored: pd.DataFrame) -> None:
         cluster_summary["Score_Medio"] = cluster_summary["Score_Medio"].round(1)
         cluster_summary["FanIn_Medio"] = cluster_summary["FanIn_Medio"].round(1)
         st.markdown("##### 📌 Resumo da Formação de Clusters")
-        st.dataframe(cluster_summary, use_container_width=True, hide_index=True)
+        safe_dataframe(cluster_summary)
 
-        # Top chaves recebedoras suspeitas de Conta Laranja (Mule Fan-In)
         mule_suspects = (
             df_scored[df_scored["riskScore"] >= 60]
             .groupby(["pixKey", "destBank", "uf"], as_index=False)
@@ -1397,47 +1678,13 @@ def render_clusters_and_geography(df_scored: pd.DataFrame) -> None:
             .head(6)
         )
         st.markdown("##### 🚨 Top Chaves Pix Recebedoras Suspeitas (Anel de Contas Laranja)")
-        st.dataframe(mule_suspects, use_container_width=True, hide_index=True)
+        safe_dataframe(mule_suspects)
 
     st.markdown("---")
     geo_col1, geo_col2 = st.columns([1.25, 1])
 
     with geo_col1:
-        fig_map = px.scatter_geo(
-            df_scored,
-            lat="lat",
-            lon="lon",
-            color="decision",
-            size="valor",
-            hover_name="city",
-            hover_data=["txId", "uf", "ddd_telefone", "cpf_9th_digit", "geoDistanceKm", "riskScore"],
-            color_discrete_map={
-                "APROVADO": "#00E676",
-                "MFA / STEP-UP": "#38BDF8",
-                "REVISÃO MANUAL": "#FBBF24",
-                "BLOQUEIO CAUTELAR (72h)": "#F97316",
-                "REPROVADO / ABRIR MED": "#EF4444",
-            },
-            scope="south america",
-            title="Mapa Geográfico de Risco Pix (Concentração por DDD/UF e Decisão)",
-        )
-        fig_map.update_geos(
-            center=dict(lat=-14.2350, lon=-51.9253),
-            projection_scale=3.2,
-            bgcolor="rgba(6,9,15,1)",
-            landcolor="#0F172A",
-            subunitcolor="#1E293B",
-            countrycolor="#334155",
-            showcountries=True,
-        )
-        fig_map.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="#F8FAFC"),
-            height=440,
-            margin=dict(l=0, r=0, t=40, b=0),
-        )
-        st.plotly_chart(fig_map, use_container_width=True)
+        ChartRenderer.render_geo_map(df_scored)
 
     with geo_col2:
         mismatch_count = int((~df_scored["cpf_ddd_consistente"]).sum())
@@ -1459,29 +1706,23 @@ def render_clusters_and_geography(df_scored: pd.DataFrame) -> None:
             df_scored.groupby(["uf", "cpf_ddd_consistente"], as_index=False)
             .agg(valor_brl=("valor", "sum"), qtd=("txId", "count"))
         )
-        uf_grp["Status CPF x DDD"] = np.where(
+        uf_grp["Status_CPF_DDD"] = np.where(
             uf_grp["cpf_ddd_consistente"], "Consistente (Mesma Região Fiscal)", "Divergente (Alerta Fraude)"
         )
-        fig_uf = px.bar(
-            uf_grp,
-            x="uf",
-            y="valor_brl",
-            color="Status CPF x DDD",
-            barmode="stack",
-            color_discrete_map={
+        ChartRenderer.render_stacked_bar(
+            df_grp=uf_grp,
+            x_col="uf",
+            y_col="valor_brl",
+            color_col="Status_CPF_DDD",
+            title="Exposição Financeira (R$) por UF x Validação Região Fiscal CPF/DDD",
+            x_title="UF",
+            y_title="Valor Financeiro (R$)",
+            color_map={
                 "Consistente (Mesma Região Fiscal)": "#00A859",
                 "Divergente (Alerta Fraude)": "#EF4444",
             },
-            title="Exposição Financeira (R$) por UF x Validação Região Fiscal CPF/DDD",
+            height=300,
         )
-        fig_uf.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="#F8FAFC"),
-            height=280,
-            legend=dict(orientation="h", y=-0.3),
-        )
-        st.plotly_chart(fig_uf, use_container_width=True)
 
 
 def render_device_fingerprint_and_sdk(df_scored: pd.DataFrame, tenant: B2BTenantConfig) -> None:
@@ -1508,57 +1749,34 @@ def render_device_fingerprint_and_sdk(df_scored: pd.DataFrame, tenant: B2BTenant
             df_scored.groupby(["deviceStatus", "decision"], as_index=False)
             .agg(qtd=("txId", "count"), valor_brl=("valor", "sum"))
         )
-        fig_dev = px.bar(
-            grp_dev,
-            x="deviceStatus",
-            y="valor_brl",
-            color="decision",
-            barmode="stack",
-            color_discrete_map={
-                "APROVADO": "#00E676",
-                "MFA / STEP-UP": "#38BDF8",
-                "REVISÃO MANUAL": "#FBBF24",
-                "BLOQUEIO CAUTELAR (72h)": "#F97316",
-                "REPROVADO / ABRIR MED": "#EF4444",
-            },
+        ChartRenderer.render_stacked_bar(
+            df_grp=grp_dev,
+            x_col="deviceStatus",
+            y_col="valor_brl",
+            color_col="decision",
             title="Camada do Dispositivo (Integrity Status) x Valor (R$)",
-        )
-        fig_dev.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="#F8FAFC"),
+            x_title="Status do Dispositivo",
+            y_title="Valor Financeiro (R$)",
+            color_map=DECISION_COLOR_MAP,
             height=360,
         )
-        st.plotly_chart(fig_dev, use_container_width=True)
 
     with col_fp2:
         grp_asn = (
             df_scored.groupby(["asn_isp", "decision"], as_index=False)
             .agg(qtd=("txId", "count"), score_medio=("riskScore", "mean"))
         )
-        fig_asn = px.bar(
-            grp_asn,
-            x="asn_isp",
-            y="qtd",
-            color="decision",
-            barmode="stack",
-            color_discrete_map={
-                "APROVADO": "#00E676",
-                "MFA / STEP-UP": "#38BDF8",
-                "REVISÃO MANUAL": "#FBBF24",
-                "BLOQUEIO CAUTELAR (72h)": "#F97316",
-                "REPROVADO / ABRIR MED": "#EF4444",
-            },
+        ChartRenderer.render_stacked_bar(
+            df_grp=grp_asn,
+            x_col="asn_isp",
+            y_col="qtd",
+            color_col="decision",
             title="Validação de Rede (ASN / Provedor ISP) x Decisão",
-        )
-        fig_asn.update_layout(
-            paper_bgcolor="rgba(0,0,0,0)",
-            plot_bgcolor="rgba(0,0,0,0)",
-            font=dict(color="#F8FAFC"),
+            x_title="ASN / Provedor de Rede",
+            y_title="Quantidade de Transações (#)",
+            color_map=DECISION_COLOR_MAP,
             height=360,
-            xaxis_tickangle=-15,
         )
-        st.plotly_chart(fig_asn, use_container_width=True)
 
     st.markdown("#### 🔍 Telemetria Detalhada de Quem Acessou (Device Fingerprint & Network Footprint)")
     telemetry_cols = [
@@ -1578,11 +1796,7 @@ def render_device_fingerprint_and_sdk(df_scored: pd.DataFrame, tenant: B2BTenant
         "decision",
     ]
     available_cols = [c for c in telemetry_cols if c in df_scored.columns]
-    st.dataframe(
-        df_scored.sort_values("riskScore", ascending=False)[available_cols].head(25),
-        use_container_width=True,
-        hide_index=True,
-    )
+    safe_dataframe(df_scored.sort_values("riskScore", ascending=False)[available_cols].head(25))
 
     with st.expander("💻 Código do Synapse Device & Network SDK (Coleta Client-Side Web/Mobile)", expanded=True):
         st.markdown(
@@ -1668,7 +1882,6 @@ def render_b2b_onboarding_page(user: AuthenticatedUser) -> None:
         submit_onboarding = st.form_submit_button(
             "🚀 Concluir Onboarding & Habilitar Token de API FaaS",
             use_container_width=True,
-            type="primary",
             disabled=not can_edit,
         )
 
@@ -1765,7 +1978,6 @@ def render_csv_upload_and_individual_analysis(
             file_name="synapse_pix_scored_output.csv",
             mime="text/csv",
             use_container_width=True,
-            type="primary",
         )
 
     st.markdown("#### 📋 Lote Pix Processado — Score (0–99), Política de Decisão e Recomendação IA")
@@ -1783,12 +1995,7 @@ def render_csv_upload_and_individual_analysis(
         "aiRecommendation",
         "reasons",
     ]
-    st.dataframe(
-        df_scored.sort_values("riskScore", ascending=False)[display_cols],
-        use_container_width=True,
-        hide_index=True,
-        height=320,
-    )
+    safe_dataframe(df_scored.sort_values("riskScore", ascending=False)[display_cols], height=320)
 
     st.markdown("---")
     st.markdown("#### 🔎 Análise Individual de Transação / Chave Pix & Automações Antifraude")
@@ -1798,7 +2005,11 @@ def render_csv_upload_and_individual_analysis(
         f"{r['txId']} | Score: {r['riskScore']}/99 | {r['decision']} | {format_brl(float(r['valor']))} | {r['fraudTypology']}"
         for _, r in sorted_df.iterrows()
     ]
-    selected_idx = st.selectbox("Selecione uma transação Pix para Dossiê Individual e Automação:", range(len(options_labels)), format_func=lambda i: options_labels[i])
+    selected_idx = st.selectbox(
+        "Selecione uma transação Pix para Dossiê Individual e Automação:",
+        range(len(options_labels)),
+        format_func=lambda i: options_labels[i],
+    )
     tx = sorted_df.iloc[int(selected_idx)]
 
     ind_col1, ind_col2 = st.columns([1.25, 1])
@@ -1825,7 +2036,7 @@ def render_csv_upload_and_individual_analysis(
             action_taken = f"MFA Facial Liveness 3D disparado via SDK para conta {tx['accountId']} ({tx['txId']})."
         if b2.button("⏳ Bloqueio 72h (BCB)", use_container_width=True, disabled=not can_act):
             action_taken = f"Bloqueio Cautelar de 72h (Res. BCB 147) aplicado sobre {format_brl(float(tx['valor']))} na transação {tx['txId']}."
-        if b3.button("🚨 Abrir MED BACEN", use_container_width=True, type="primary", disabled=not can_act):
+        if b3.button("🚨 Abrir MED BACEN", use_container_width=True, disabled=not can_act):
             action_taken = f"Protocolo MED aberto no DICT/BACEN contra a chave {tx['pixKey']} ({tx['destBank']}) — {tx['txId']}."
         if b4.button("🔗 Disparar Webhook", use_container_width=True, disabled=not can_act):
             action_taken = f"Webhook JSON enviado para {tenant.webhook_url} com decisão {tx['decision']} ({tx['txId']})."
@@ -1884,7 +2095,7 @@ def render_csv_upload_and_individual_analysis(
 
     if st.session_state.automation_audit_log:
         st.markdown("##### 📜 Trilha de Auditoria das Automações Executadas na Sessão")
-        st.dataframe(pd.DataFrame(st.session_state.automation_audit_log), use_container_width=True, hide_index=True)
+        safe_dataframe(pd.DataFrame(st.session_state.automation_audit_log))
 
 
 def main() -> None:
@@ -1904,17 +2115,18 @@ def main() -> None:
     inject_synapse_theme()
     tenant: B2BTenantConfig = st.session_state.b2b_tenant
 
-    # SIDEBAR: Identidade Autenticada RBAC + Fonte de Dados + Calibragem de Pesos
     with st.sidebar:
         st.markdown("## 🛡️ SYNAPSE FaaS")
         st.markdown(f"**Usuário:** {user.full_name}")
         st.markdown(f'<span class="badge-role">Perfil RBAC: {user.role}</span>', unsafe_allow_html=True)
         st.caption(f"Tenant Ativo: `{tenant.company_name}`")
         st.caption(f"Fonte de Dados: `{st.session_state.data_source_label}`")
+        engine_badge = "Plotly" if HAS_PLOTLY else ("Altair (Snowflake Native)" if HAS_ALTAIR else "SVG/HTML Native")
+        st.caption(f"Motor Gráfico: `{engine_badge}`")
 
         if st.button("🚪 Encerrar Sessão (Logout)", use_container_width=True):
             st.session_state.auth_user = None
-            st.rerun()
+            safe_rerun()
 
         st.markdown("---")
         st.markdown("### ⚙️ Calibragem do Motor Pix")
@@ -1950,9 +2162,8 @@ def main() -> None:
             new_seed = secrets.randbelow(10_000)
             st.session_state.raw_pix_df = FeatureStoreRepository.generate_pix_dataset(360, seed=new_seed)
             st.session_state.data_source_label = f"Feature Store Sintética (Seed #{new_seed})"
-            st.rerun()
+            safe_rerun()
 
-    # HERO HEADER
     st.markdown(
         f"""
         <div class="synapse-hero">
@@ -1963,7 +2174,6 @@ def main() -> None:
         unsafe_allow_html=True,
     )
 
-    # Calcula o dataframe escorado em tempo real com os pesos e política do tenant
     df_scored = PixScoringEngine.score_dataframe(
         st.session_state.raw_pix_df,
         weights=st.session_state.risk_weights,
